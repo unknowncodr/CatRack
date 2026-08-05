@@ -144,15 +144,39 @@
   .card.online{border-left-color:var(--online);}
   .card:hover{background:var(--surface-2);}
   .card:active{transform:scale(0.99);}
+  .card .head{
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:10px;
+  }
+  .icon{
+    width:28px; height:28px; border-radius:6px; flex-shrink:0;
+    image-rendering:pixelated;
+    background:var(--surface-2);
+  }
+  .icon-fallback{
+    width:28px; height:28px; border-radius:6px; flex-shrink:0;
+    background:var(--accent-dim); color:var(--accent);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:13px;
+  }
   .card .name{
     font-weight:600; font-size:14px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    margin-bottom:8px;
   }
   .card .meta{
     display:flex; justify-content:space-between; align-items:center;
     font-size:12px; color:var(--text-muted); font-family:'IBM Plex Mono',monospace;
   }
+  .stat-row{
+    display:flex; flex-wrap:wrap; gap:6px 10px;
+    margin-top:10px; font-size:11.5px; color:var(--text-muted);
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .stat-row .stat{display:flex; align-items:center; gap:4px;}
+  .stat-row .stat .v{color:var(--text);}
+  .stat-row .stat.tps-good .v{color:var(--online);}
+  .stat-row .stat.tps-warn .v{color:#E0B23D;}
+  .stat-row .stat.tps-bad .v{color:var(--danger);}
   .card .status-row{
     display:flex; align-items:center; gap:6px;
     margin-top:12px; font-size:12px;
@@ -179,6 +203,33 @@
   .detail-title{display:flex; flex-direction:column;}
   .detail-title .name{font-weight:700; font-size:16px;}
   .detail-title .sub{font-size:12px; color:var(--text-muted); font-family:'IBM Plex Mono',monospace;}
+  .detail-top .icon, .detail-top .icon-fallback{width:36px; height:36px; border-radius:8px;}
+  .detail-top .icon-fallback{font-size:16px;}
+
+  .stats-strip{
+    display:flex; flex-wrap:wrap; gap:10px;
+    margin-bottom:16px;
+  }
+  .stats-strip .chip{
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:8px 12px; min-width:84px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .stats-strip .chip .k{font-size:10.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;}
+  .stats-strip .chip .v{font-size:15px; font-weight:600; margin-top:2px;}
+  .stats-strip .chip .v.tps-good{color:var(--online);}
+  .stats-strip .chip .v.tps-warn{color:#E0B23D;}
+  .stats-strip .chip .v.tps-bad{color:var(--danger);}
+  .stats-strip .chip .v.muted{color:var(--text-muted); font-weight:500;}
+
+  .players-block{margin-bottom:16px;}
+  .players-block .k{font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;}
+  .player-list{display:flex; flex-wrap:wrap; gap:6px;}
+  .player-chip{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:999px;
+    padding:4px 10px; font-size:12px; font-family:'IBM Plex Mono',monospace;
+  }
+  .player-list .none{font-size:12px; color:var(--text-muted); font-style:italic; font-family:inherit;}
 
   .console{
     background:#0B0D11;
@@ -262,12 +313,26 @@
       <div class="detail-top">
         <div class="left">
           <button class="back" id="backBtn">&larr; Servers</button>
+          <div id="detailIconWrap"></div>
           <div class="detail-title">
             <span class="name" id="detailName">&nbsp;</span>
             <span class="sub" id="detailMeta">&nbsp;</span>
           </div>
         </div>
         <button class="btn" id="powerBtn">Start</button>
+      </div>
+
+      <div class="stats-strip" id="statsStrip" hidden>
+        <div class="chip"><div class="k">Players</div><div class="v" id="statPlayers">–</div></div>
+        <div class="chip"><div class="k">CPU</div><div class="v" id="statCpu">–</div></div>
+        <div class="chip"><div class="k">RAM</div><div class="v" id="statRam">–</div></div>
+        <div class="chip"><div class="k">Uptime</div><div class="v" id="statUptime">–</div></div>
+        <div class="chip"><div class="k">TPS</div><div class="v" id="statTps">–</div></div>
+      </div>
+
+      <div class="players-block" id="playersBlock" hidden>
+        <div class="k">Players online</div>
+        <div class="player-list" id="playerList"></div>
       </div>
 
       <div class="console" id="console">
@@ -292,7 +357,9 @@
   // ---- State ----
   let ws = null;
   let servers = new Map();      // name -> {name, version, port, status}
+  let serverStats = new Map();  // name -> {uptimeMs, cpu, memoryMB, players, icon, motd, tps}
   let consoleLines = new Map(); // name -> [lines]
+  let cardEls = new Map();      // name -> card DOM element (for lightweight stat updates)
   let currentServer = null;
   let reconnectTimer = null;
 
@@ -385,7 +452,10 @@
       case 'server_list':
         servers = new Map(msg.servers.map(s => [s.name, s]));
         renderGrid();
-        if (currentServer) renderDetailHeader();
+        if (currentServer){
+          renderDetailHeader();
+          updateDetailStats(currentServer);
+        }
         break;
 
       case 'console': {
@@ -406,10 +476,69 @@
         // server_list message that follows will refresh card/detail state
         break;
 
+      case 'stats': {
+        const prev = serverStats.get(msg.server) || {};
+        // msg.data only carries keys that changed this tick (e.g. TPS
+        // is only sampled every ~10s) — merge so untouched fields (like
+        // a still-current TPS reading) don't flicker back to unknown.
+        serverStats.set(msg.server, { ...prev, ...msg.data });
+        updateCardStats(msg.server);
+        if (currentServer === msg.server) updateDetailStats(msg.server);
+        break;
+      }
+
       case 'error':
         console.warn('Agent error:', msg.error);
         break;
     }
+  }
+
+  // ---- Formatting helpers ----
+  function formatUptime(ms){
+    if (ms == null) return '–';
+    const totalMin = Math.floor(ms / 60000);
+    const d = Math.floor(totalMin / 1440);
+    const h = Math.floor((totalMin % 1440) / 60);
+    const m = totalMin % 60;
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function tpsClass(tps){
+    if (tps == null) return '';
+    if (tps >= 19.5) return 'tps-good';
+    if (tps >= 15) return 'tps-warn';
+    return 'tps-bad';
+  }
+
+  function formatTps(tps){
+    return tps == null ? '–' : tps.toFixed(1);
+  }
+
+  // Small square server icon (from the live ping's favicon) with a
+  // letter-monogram fallback for servers that haven't reported one yet
+  // (still starting up, or too old a version to send a favicon).
+  function iconHtml(name, iconDataUri){
+    if (iconDataUri){
+      return `<img class="icon" src="${iconDataUri}" alt="">`;
+    }
+    const letter = escapeHtml((name || '?').charAt(0).toUpperCase());
+    return `<div class="icon-fallback">${letter}</div>`;
+  }
+
+  function statRowHtml(name){
+    const s = servers.get(name);
+    if (!s || s.status !== 'online') return '';
+    const stats = serverStats.get(name);
+    if (!stats) return '';
+    const parts = [];
+    if (stats.players) parts.push(`<span class="stat">👤 <span class="v">${stats.players.online}/${stats.players.max}</span></span>`);
+    if (stats.cpu != null) parts.push(`<span class="stat">CPU <span class="v">${stats.cpu}%</span></span>`);
+    if (stats.memoryMB != null) parts.push(`<span class="stat">RAM <span class="v">${stats.memoryMB}MB</span></span>`);
+    if (stats.uptimeMs != null) parts.push(`<span class="stat">Up <span class="v">${formatUptime(stats.uptimeMs)}</span></span>`);
+    if (!parts.length) return '';
+    return `<div class="stat-row">${parts.join('')}</div>`;
   }
 
   // ---- Grid rendering ----
@@ -418,20 +547,39 @@
     const list = Array.from(servers.values()).sort((a,b) => a.name.localeCompare(b.name));
     el('emptyState').hidden = list.length !== 0;
     grid.innerHTML = '';
+    cardEls.clear();
 
     for (const s of list){
       const card = document.createElement('button');
       card.className = 'card ' + (s.status === 'online' ? 'online' : '');
+      const stats = serverStats.get(s.name);
       card.innerHTML = `
-        <div class="name">${escapeHtml(s.name)}</div>
+        <div class="head">
+          <span class="icon-slot">${iconHtml(s.name, stats && stats.icon)}</span>
+          <div class="name">${escapeHtml(s.name)}</div>
+        </div>
         <div class="meta"><span>${escapeHtml(s.version)}</span><span>:${s.port}</span></div>
+        <div class="stat-row-slot">${statRowHtml(s.name)}</div>
         <div class="status-row ${s.status === 'online' ? 'online' : ''}">
           <span class="dot ${s.status === 'online' ? 'online' : 'offline'}"></span>
           <span class="label">${s.status === 'online' ? 'Online' : 'Offline'}</span>
         </div>`;
       card.addEventListener('click', () => openDetail(s.name));
       grid.appendChild(card);
+      cardEls.set(s.name, card);
     }
+  }
+
+  // Cheap per-tick update: only touches the icon + stat-row of one
+  // card instead of rebuilding the whole grid every ~4s.
+  function updateCardStats(name){
+    const card = cardEls.get(name);
+    if (!card) return;
+    const stats = serverStats.get(name);
+    const iconSlot = card.querySelector('.icon-slot');
+    if (iconSlot) iconSlot.innerHTML = iconHtml(name, stats && stats.icon);
+    const rowSlot = card.querySelector('.stat-row-slot');
+    if (rowSlot) rowSlot.innerHTML = statRowHtml(name);
   }
 
   // ---- Detail rendering ----
@@ -439,6 +587,7 @@
     currentServer = name;
     showView('detail');
     renderDetailHeader();
+    updateDetailStats(name);
 
     const cached = consoleLines.get(name);
     if (cached && cached.length){
@@ -461,12 +610,49 @@
     if (!s) return;
     el('detailName').textContent = s.name;
     el('detailMeta').textContent = `${s.version} · port ${s.port}`;
+    const stats = serverStats.get(currentServer);
+    el('detailIconWrap').innerHTML = iconHtml(s.name, stats && stats.icon);
     const powerBtn = el('powerBtn');
     const running = s.status === 'online';
     powerBtn.textContent = running ? 'Stop' : 'Start';
     powerBtn.className = 'btn ' + (running ? 'danger' : '');
     el('cmdInput').disabled = !running;
     el('cmdSend').disabled = !running;
+  }
+
+  // Updates the stats strip + player list for whichever server is
+  // currently open. Safe to call even if no stats have arrived yet —
+  // everything just falls back to "–" until the first poll comes in.
+  function updateDetailStats(name){
+    const s = servers.get(name);
+    const stats = serverStats.get(name);
+    const running = s && s.status === 'online';
+
+    el('statsStrip').hidden = !running;
+    el('playersBlock').hidden = !running;
+    if (!running) return;
+
+    el('detailIconWrap').innerHTML = iconHtml(name, stats && stats.icon);
+
+    el('statPlayers').textContent = stats && stats.players ? `${stats.players.online}/${stats.players.max}` : '–';
+    el('statCpu').textContent = stats && stats.cpu != null ? `${stats.cpu}%` : '–';
+    el('statRam').textContent = stats && stats.memoryMB != null ? `${stats.memoryMB} MB` : '–';
+    el('statUptime').textContent = stats && stats.uptimeMs != null ? formatUptime(stats.uptimeMs) : '–';
+
+    const tpsEl = el('statTps');
+    tpsEl.textContent = stats ? formatTps(stats.tps) : '–';
+    tpsEl.className = 'v ' + (stats ? tpsClass(stats.tps) : '');
+
+    const playerList = el('playerList');
+    const sample = stats && stats.players && stats.players.sample || [];
+    if (!sample.length){
+      const online = stats && stats.players ? stats.players.online : 0;
+      playerList.innerHTML = online > 0
+        ? '<span class="none">Players online, but no names reported.</span>'
+        : '<span class="none">No players online.</span>';
+    } else {
+      playerList.innerHTML = sample.map(p => `<span class="player-chip">${escapeHtml(p.name)}</span>`).join('');
+    }
   }
 
   function renderConsoleFull(lines){
