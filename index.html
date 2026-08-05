@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Server Room</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #0F1115;
+    --surface: #181B22;
+    --surface-2: #20242D;
+    --border: #2A2E38;
+    --text: #EDEBE6;
+    --text-muted: #8C93A3;
+    --accent: #49C5E0;
+    --accent-dim: #2C3B42;
+    --online: #3DBE7A;
+    --offline: #565C6B;
+    --danger: #E1462F;
+    --danger-dim: #3A2420;
+    --radius: 10px;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001ms !important; transition-duration:0.001ms !important;}
+  }
+
+  a, button{font-family:inherit;}
+  button{cursor:pointer;}
+  input:focus-visible, button:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
+
+  /* --- Layout shells --- */
+  #app{min-height:100vh; display:flex; flex-direction:column;}
+
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 24px;
+    border-bottom:1px solid var(--border);
+    background:var(--surface);
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:0.02em;}
+  .brand .mark{
+    width:10px; height:10px; border-radius:2px;
+    background:var(--accent);
+    box-shadow:0 0 10px var(--accent);
+  }
+  .host-pill{
+    display:flex; align-items:center; gap:8px;
+    font-size:13px; color:var(--text-muted);
+    padding:6px 12px; border:1px solid var(--border); border-radius:999px;
+  }
+  .dot{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+  .dot.online{background:var(--online); box-shadow:0 0 6px var(--online); animation:pulse 2s ease-in-out infinite;}
+  .dot.offline{background:var(--offline);}
+  @keyframes pulse{
+    0%,100%{opacity:1;} 50%{opacity:0.45;}
+  }
+
+  main{flex:1; padding:24px; max-width:1100px; width:100%; margin:0 auto;}
+
+  /* --- Login --- */
+  .login-wrap{
+    min-height:100%;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  }
+  .login-card{
+    width:100%; max-width:380px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:32px;
+  }
+  .login-card h1{
+    margin:0 0 4px; font-size:20px; font-weight:700;
+  }
+  .login-card p.sub{
+    margin:0 0 24px; color:var(--text-muted); font-size:14px;
+  }
+  label{display:block; font-size:13px; color:var(--text-muted); margin:16px 0 6px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=password]{
+    width:100%; padding:10px 12px;
+    background:var(--bg); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); font-size:14px;
+  }
+  .btn{
+    border:none; border-radius:8px; padding:10px 16px;
+    font-size:14px; font-weight:600;
+    background:var(--accent); color:#08181C;
+    transition:opacity .15s;
+  }
+  .btn:hover{opacity:0.88;}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
+  .btn.full{width:100%; margin-top:22px; padding:11px;}
+  .btn.danger{background:var(--danger); color:#160705;}
+  .btn.ghost{
+    background:transparent; border:1px solid var(--border); color:var(--text);
+  }
+  .btn.ghost:hover{background:var(--surface-2); opacity:1;}
+
+  .note{font-size:12px; color:var(--text-muted); margin-top:16px; line-height:1.5;}
+  .error{
+    font-size:13px; color:var(--danger); margin-top:12px;
+    display:none;
+  }
+  .error.show{display:block;}
+
+  /* --- Server grid --- */
+  .grid-header{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .grid-header h2{margin:0; font-size:16px; font-weight:600;}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));
+    gap:12px;
+  }
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-left:3px solid var(--offline);
+    border-radius:var(--radius);
+    padding:16px;
+    text-align:left;
+    color:var(--text);
+    transition:background .15s, transform .1s;
+  }
+  .card.online{border-left-color:var(--online);}
+  .card:hover{background:var(--surface-2);}
+  .card:active{transform:scale(0.99);}
+  .card .name{
+    font-weight:600; font-size:14px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    margin-bottom:8px;
+  }
+  .card .meta{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:12px; color:var(--text-muted); font-family:'IBM Plex Mono',monospace;
+  }
+  .card .status-row{
+    display:flex; align-items:center; gap:6px;
+    margin-top:12px; font-size:12px;
+  }
+  .card .status-row .label{color:var(--text-muted);}
+  .card .status-row.online .label{color:var(--online);}
+
+  .empty{
+    color:var(--text-muted); font-size:14px;
+    padding:40px 0; text-align:center;
+  }
+
+  /* --- Server detail / console --- */
+  .detail-top{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:16px; flex-wrap:wrap; gap:12px;
+  }
+  .detail-top .left{display:flex; align-items:center; gap:14px;}
+  .back{
+    background:none; border:none; color:var(--text-muted);
+    font-size:14px; display:flex; align-items:center; gap:6px;
+  }
+  .back:hover{color:var(--text);}
+  .detail-title{display:flex; flex-direction:column;}
+  .detail-title .name{font-weight:700; font-size:16px;}
+  .detail-title .sub{font-size:12px; color:var(--text-muted); font-family:'IBM Plex Mono',monospace;}
+
+  .console{
+    background:#0B0D11;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    height:52vh;
+    min-height:260px;
+    overflow-y:auto;
+    padding:14px 16px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    line-height:1.6;
+  }
+  .console .line{white-space:pre-wrap; word-break:break-word; color:#C9CEDA;}
+  .console .line.system{color:var(--accent);}
+  .console .placeholder{color:var(--text-muted); font-style:italic;}
+
+  .cmd-row{
+    display:flex; gap:8px; margin-top:10px;
+  }
+  .cmd-row input{
+    flex:1;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .cmd-row input:disabled{opacity:0.4;}
+
+  footer{
+    padding:16px 24px; text-align:center;
+    font-size:12px; color:var(--text-muted);
+  }
+
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand"><span class="mark"></span> Server Room</div>
+    <div id="hostPill" class="host-pill" hidden>
+      <span id="hostDot" class="dot offline"></span>
+      <span id="hostLabel">Host offline</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- LOGIN VIEW -->
+    <section id="loginView" class="login-wrap">
+      <div class="login-card">
+        <h1>Connect to your host</h1>
+        <p class="sub">Enter the tunnel address and token from your host agent.</p>
+
+        <label for="tunnelUrl">Tunnel URL</label>
+        <input type="text" id="tunnelUrl" placeholder="https://your-tunnel.trycloudflare.com" autocomplete="off">
+
+        <label for="tunnelToken">Token</label>
+        <input type="password" id="tunnelToken" placeholder="Agent auth token" autocomplete="off">
+
+        <button class="btn full" id="connectBtn">Connect</button>
+        <div class="error" id="loginError">Could not reach the host. Check the URL and token, and make sure the agent and tunnel are running.</div>
+        <p class="note">Stored only for this browser tab (session storage) — cleared when you close it.</p>
+      </div>
+    </section>
+
+    <!-- SERVER GRID VIEW -->
+    <section id="gridView" hidden>
+      <div class="grid-header">
+        <h2>Servers</h2>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost" id="rescanBtn">Rescan</button>
+          <button class="btn ghost" id="disconnectBtn">Disconnect</button>
+        </div>
+      </div>
+      <div id="grid" class="grid"></div>
+      <div id="emptyState" class="empty" hidden>No server folders found. Make sure each server folder contains a server.jar.</div>
+    </section>
+
+    <!-- SERVER DETAIL VIEW -->
+    <section id="detailView" hidden>
+      <div class="detail-top">
+        <div class="left">
+          <button class="back" id="backBtn">&larr; Servers</button>
+          <div class="detail-title">
+            <span class="name" id="detailName">&nbsp;</span>
+            <span class="sub" id="detailMeta">&nbsp;</span>
+          </div>
+        </div>
+        <button class="btn" id="powerBtn">Start</button>
+      </div>
+
+      <div class="console" id="console">
+        <div class="placeholder">No output yet.</div>
+      </div>
+
+      <div class="cmd-row">
+        <input type="text" id="cmdInput" placeholder="Type a command and press Enter&hellip;" disabled>
+        <button class="btn ghost" id="cmdSend" disabled>Send</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>Host connection is peer-to-peer through your tunnel — nothing passes through a third-party server.</footer>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---- State ----
+  let ws = null;
+  let servers = new Map();      // name -> {name, version, port, status}
+  let consoleLines = new Map(); // name -> [lines]
+  let currentServer = null;
+  let reconnectTimer = null;
+
+  // ---- Elements ----
+  const el = (id) => document.getElementById(id);
+  const loginView = el('loginView');
+  const gridView = el('gridView');
+  const detailView = el('detailView');
+  const hostPill = el('hostPill');
+  const hostDot = el('hostDot');
+  const hostLabel = el('hostLabel');
+
+  // ---- Session persistence (per-tab only) ----
+  function getSaved(){
+    return {
+      url: sessionStorage.getItem('sr_url') || '',
+      token: sessionStorage.getItem('sr_token') || '',
+    };
+  }
+  function save(url, token){
+    sessionStorage.setItem('sr_url', url);
+    sessionStorage.setItem('sr_token', token);
+  }
+  function clearSaved(){
+    sessionStorage.removeItem('sr_url');
+    sessionStorage.removeItem('sr_token');
+  }
+
+  // ---- View switching ----
+  function showView(name){
+    loginView.hidden = name !== 'login';
+    gridView.hidden = name !== 'grid';
+    detailView.hidden = name !== 'detail';
+    hostPill.hidden = name === 'login';
+  }
+
+  function setHostStatus(online){
+    hostDot.className = 'dot ' + (online ? 'online' : 'offline');
+    hostLabel.textContent = online ? 'Host online' : 'Host offline';
+  }
+
+  // ---- Connection ----
+  function connect(url, token){
+    let wsUrl;
+    try{
+      wsUrl = new URL('/ws', url);
+      wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl.searchParams.set('token', token);
+    }catch(e){
+      el('loginError').classList.add('show');
+      return;
+    }
+
+    el('loginError').classList.remove('show');
+    ws = new WebSocket(wsUrl.toString());
+
+    ws.onopen = () => {
+      save(url, token);
+      setHostStatus(true);
+      showView('grid');
+    };
+
+    ws.onmessage = (event) => {
+      let msg;
+      try{ msg = JSON.parse(event.data); }catch(e){ return; }
+      handleMessage(msg);
+    };
+
+    ws.onclose = () => {
+      setHostStatus(false);
+      if (loginView.hidden){
+        // We were connected before — keep the UI up but mark offline,
+        // and keep trying to reconnect quietly in the background.
+        scheduleReconnect(url, token);
+      } else {
+        el('loginError').classList.add('show');
+      }
+    };
+
+    ws.onerror = () => { /* onclose fires right after; handled there */ };
+  }
+
+  function scheduleReconnect(url, token){
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => connect(url, token), 4000);
+  }
+
+  function handleMessage(msg){
+    switch(msg.type){
+      case 'server_list':
+        servers = new Map(msg.servers.map(s => [s.name, s]));
+        renderGrid();
+        if (currentServer) renderDetailHeader();
+        break;
+
+      case 'console': {
+        if (!consoleLines.has(msg.server)) consoleLines.set(msg.server, []);
+        const lines = consoleLines.get(msg.server);
+        lines.push(msg.line);
+        if (lines.length > 500) lines.shift();
+        if (currentServer === msg.server) appendConsoleLine(msg.line);
+        break;
+      }
+
+      case 'log_history':
+        consoleLines.set(msg.server, msg.lines.slice());
+        if (currentServer === msg.server) renderConsoleFull(msg.lines);
+        break;
+
+      case 'status_change':
+        // server_list message that follows will refresh card/detail state
+        break;
+
+      case 'error':
+        console.warn('Agent error:', msg.error);
+        break;
+    }
+  }
+
+  // ---- Grid rendering ----
+  function renderGrid(){
+    const grid = el('grid');
+    const list = Array.from(servers.values()).sort((a,b) => a.name.localeCompare(b.name));
+    el('emptyState').hidden = list.length !== 0;
+    grid.innerHTML = '';
+
+    for (const s of list){
+      const card = document.createElement('button');
+      card.className = 'card ' + (s.status === 'online' ? 'online' : '');
+      card.innerHTML = `
+        <div class="name">${escapeHtml(s.name)}</div>
+        <div class="meta"><span>${escapeHtml(s.version)}</span><span>:${s.port}</span></div>
+        <div class="status-row ${s.status === 'online' ? 'online' : ''}">
+          <span class="dot ${s.status === 'online' ? 'online' : 'offline'}"></span>
+          <span class="label">${s.status === 'online' ? 'Online' : 'Offline'}</span>
+        </div>`;
+      card.addEventListener('click', () => openDetail(s.name));
+      grid.appendChild(card);
+    }
+  }
+
+  // ---- Detail rendering ----
+  function openDetail(name){
+    currentServer = name;
+    showView('detail');
+    renderDetailHeader();
+
+    const cached = consoleLines.get(name);
+    if (cached && cached.length){
+      renderConsoleFull(cached);
+    } else {
+      el('console').innerHTML = '<div class="placeholder">No output yet.</div>';
+      send({type:'get_logs', server:name});
+    }
+
+    const cmdInput = el('cmdInput');
+    const cmdSend = el('cmdSend');
+    const s = servers.get(name);
+    const running = s && s.status === 'online';
+    cmdInput.disabled = !running;
+    cmdSend.disabled = !running;
+  }
+
+  function renderDetailHeader(){
+    const s = servers.get(currentServer);
+    if (!s) return;
+    el('detailName').textContent = s.name;
+    el('detailMeta').textContent = `${s.version} · port ${s.port}`;
+    const powerBtn = el('powerBtn');
+    const running = s.status === 'online';
+    powerBtn.textContent = running ? 'Stop' : 'Start';
+    powerBtn.className = 'btn ' + (running ? 'danger' : '');
+    el('cmdInput').disabled = !running;
+    el('cmdSend').disabled = !running;
+  }
+
+  function renderConsoleFull(lines){
+    const box = el('console');
+    box.innerHTML = '';
+    if (!lines.length){
+      box.innerHTML = '<div class="placeholder">No output yet.</div>';
+      return;
+    }
+    for (const line of lines) appendConsoleLine(line, false);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function appendConsoleLine(line, scroll = true){
+    const box = el('console');
+    const placeholder = box.querySelector('.placeholder');
+    if (placeholder) placeholder.remove();
+
+    const div = document.createElement('div');
+    div.className = 'line' + (line.startsWith('[host-agent]') ? ' system' : '');
+    div.textContent = line;
+    box.appendChild(div);
+
+    if (scroll){
+      const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      if (nearBottom) box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  function escapeHtml(str){
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function send(obj){
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  // ---- Event wiring ----
+  el('connectBtn').addEventListener('click', () => {
+    const url = el('tunnelUrl').value.trim();
+    const token = el('tunnelToken').value.trim();
+    if (!url || !token) return;
+    connect(url, token);
+  });
+
+  el('rescanBtn').addEventListener('click', () => send({type:'rescan'}));
+
+  el('disconnectBtn').addEventListener('click', () => {
+    clearTimeout(reconnectTimer);
+    if (ws) ws.close();
+    clearSaved();
+    servers.clear();
+    consoleLines.clear();
+    currentServer = null;
+    showView('login');
+  });
+
+  el('backBtn').addEventListener('click', () => {
+    currentServer = null;
+    showView('grid');
+  });
+
+  el('powerBtn').addEventListener('click', () => {
+    const s = servers.get(currentServer);
+    if (!s) return;
+    send({type: s.status === 'online' ? 'stop' : 'start', server: currentServer});
+  });
+
+  function sendCommand(){
+    const input = el('cmdInput');
+    const text = input.value.trim();
+    if (!text || !currentServer) return;
+    send({type:'command', server: currentServer, text});
+    input.value = '';
+  }
+  el('cmdSend').addEventListener('click', sendCommand);
+  el('cmdInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendCommand();
+  });
+
+  // ---- Boot: auto-reconnect if we have a saved session ----
+  const saved = getSaved();
+  if (saved.url && saved.token){
+    el('tunnelUrl').value = saved.url;
+    el('tunnelToken').value = saved.token;
+    connect(saved.url, saved.token);
+  }
+})();
+</script>
+</body>
+</html>
