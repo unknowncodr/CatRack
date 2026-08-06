@@ -256,6 +256,28 @@
   }
   .cmd-row input:disabled{opacity:0.4;}
 
+  .power-actions{display:flex; gap:8px;}
+
+  .settings-panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px 16px; margin-bottom:16px;
+    display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;
+  }
+  .settings-field{display:flex; flex-direction:column; gap:6px;}
+  .settings-field label{margin:0; font-size:12px;}
+  .settings-field input{
+    width:140px; padding:8px 10px;
+    font-family:'IBM Plex Mono',monospace; font-size:13px;
+  }
+  .settings-note{
+    font-size:12px; color:var(--text-muted); flex-basis:100%;
+    margin-top:-4px;
+  }
+  .settings-error{
+    font-size:12px; color:var(--danger); flex-basis:100%; display:none;
+  }
+  .settings-error.show{display:block;}
+
   footer{
     padding:16px 24px; text-align:center;
     font-size:12px; color:var(--text-muted);
@@ -319,7 +341,24 @@
             <span class="sub" id="detailMeta">&nbsp;</span>
           </div>
         </div>
-        <button class="btn" id="powerBtn">Start</button>
+        <div class="power-actions">
+          <button class="btn ghost" id="restartBtn">Restart</button>
+          <button class="btn" id="powerBtn">Start</button>
+        </div>
+      </div>
+
+      <div class="settings-panel">
+        <div class="settings-field">
+          <label for="ramInput">RAM (MB)</label>
+          <input type="number" id="ramInput" min="512" max="65536" step="512" placeholder="Default">
+        </div>
+        <div class="settings-field">
+          <label for="portInput">Port</label>
+          <input type="number" id="portInput" min="1" max="65535">
+        </div>
+        <button class="btn ghost" id="saveSettingsBtn">Save</button>
+        <div class="settings-note">Applies the next time this server starts. Leave RAM blank to use the server's own start script.</div>
+        <div class="settings-error" id="settingsError"></div>
       </div>
 
       <div class="stats-strip" id="statsStrip" hidden>
@@ -489,6 +528,7 @@
 
       case 'error':
         console.warn('Agent error:', msg.error);
+        if (!detailView.hidden) showSettingsError(msg.error);
         break;
     }
   }
@@ -604,6 +644,13 @@
     const running = s && s.status === 'online';
     cmdInput.disabled = !running;
     cmdSend.disabled = !running;
+
+    // Populate settings fields fresh each time the view is opened (but
+    // not on every subsequent server_list refresh) so we don't clobber
+    // an edit in progress while the view stays open.
+    el('ramInput').value = s && s.ramMB ? s.ramMB : '';
+    el('portInput').value = s ? s.port : '';
+    hideSettingsError();
   }
 
   function renderDetailHeader(){
@@ -683,6 +730,15 @@
     }
   }
 
+  function showSettingsError(text){
+    const box = el('settingsError');
+    box.textContent = text;
+    box.classList.add('show');
+  }
+  function hideSettingsError(){
+    el('settingsError').classList.remove('show');
+  }
+
   function escapeHtml(str){
     const d = document.createElement('div');
     d.textContent = str;
@@ -722,6 +778,39 @@
     const s = servers.get(currentServer);
     if (!s) return;
     send({type: s.status === 'online' ? 'stop' : 'start', server: currentServer});
+  });
+
+  el('restartBtn').addEventListener('click', () => {
+    if (!currentServer) return;
+    send({type: 'restart', server: currentServer});
+  });
+
+  el('saveSettingsBtn').addEventListener('click', () => {
+    if (!currentServer) return;
+    hideSettingsError();
+
+    const ramRaw = el('ramInput').value.trim();
+    const portRaw = el('portInput').value.trim();
+
+    if (ramRaw !== ''){
+      const ram = Number(ramRaw);
+      if (!Number.isFinite(ram) || ram < 512 || ram > 65536){
+        showSettingsError('RAM must be between 512 and 65536 MB.');
+        return;
+      }
+    }
+    if (portRaw !== ''){
+      const port = Number(portRaw);
+      if (!Number.isInteger(port) || port < 1 || port > 65535){
+        showSettingsError('Port must be between 1 and 65535.');
+        return;
+      }
+    }
+
+    send({type: 'set_ram', server: currentServer, ramMB: ramRaw === '' ? null : Number(ramRaw)});
+    if (portRaw !== ''){
+      send({type: 'set_port', server: currentServer, port: Number(portRaw)});
+    }
   });
 
   function sendCommand(){
