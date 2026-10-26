@@ -227,8 +227,9 @@
   .players-block .k{font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;}
   .player-list{display:flex; flex-wrap:wrap; gap:6px;}
   .player-chip{
-    background:var(--surface-2); border:1px solid var(--border); border-radius:999px;
-    padding:4px 10px; font-size:12px; font-family:'IBM Plex Mono',monospace;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
+    padding:4px 4px; font-size:12px; font-family:'IBM Plex Mono',monospace;
+    display:flex; align-items:center; gap:4px;
   }
   .player-list .none{font-size:12px; color:var(--text-muted); font-style:italic; font-family:inherit;}
 
@@ -702,7 +703,7 @@
         ? '<span class="none">Players online, but no names reported.</span>'
         : '<span class="none">No players online.</span>';
     } else {
-      playerList.innerHTML = sample.map(p => `<span class="player-chip"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/32" alt="${escapeHtml(p.name)}'s Minecraft head" width="24" height="24" loading="lazy">${escapeHtml(p.name)}</span>`).join('');
+      playerList.innerHTML = sample.map(p => `<span class="player-chip"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</span>`).join('');
     }
   }
 
