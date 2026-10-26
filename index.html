@@ -560,11 +560,15 @@
   function formatTps(tps){
     return tps == null ? '–' : tps.toFixed(1);
   }
-
+  
   // Small square server icon (from the live ping's favicon) with a
   // letter-monogram fallback for servers that haven't reported one yet
   // (still starting up, or too old a version to send a favicon).
   function iconHtml(name, iconDataUri){
+    if (!iconDataUri){
+      const s = servers.get(name);
+      iconDataUri = s && s.icon;
+    }
     if (iconDataUri){
       return `<img class="icon" src="${iconDataUri}" alt="">`;
     }
