@@ -117,6 +117,7 @@
     background:transparent; border:1px solid var(--border); color:var(--text);
   }
   .btn.ghost:hover{background:var(--surface-2); opacity:1;}
+  .btn.small{padding:4px 10px; font-size:12px;}
 
   .note{font-size:12px; color:var(--text-muted); margin-top:16px; line-height:1.5;}
   .error{
@@ -296,12 +297,15 @@
   }
   .modal{
     background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:20px; width:100%; max-width:440px; max-height:90vh; overflow-y:auto;
+    padding:20px; width:100%; max-width:900px; max-height:90vh; overflow-y:auto;
   }
   .modal-head{
     display:flex; justify-content:space-between; align-items:center;
     font-weight:700; font-size:16px; margin-bottom:14px;
   }
+  .pm-layout{display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;}
+  .pm-left{--u:2px; flex:0 0 auto; padding:var(--u);}
+  .pm-right{flex:1 1 260px; min-width:240px;}
   .pm-row{
     display:flex; justify-content:space-between; gap:12px; padding:6px 0;
     border-bottom:1px solid var(--border); font-size:13px;
@@ -309,6 +313,84 @@
   .pm-row .k{color:var(--text-muted);}
   .pm-row .v{font-family:'IBM Plex Mono',monospace; text-align:right;}
   .pm-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;}
+
+  /* --- Health / hunger bars --- */
+  .vital{margin-bottom:12px;}
+  .vital-head{display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px;}
+  .vital-head .k{color:var(--text-muted);}
+  .vital-head .v{font-family:'IBM Plex Mono',monospace;}
+  .vital-row{display:flex; align-items:center; gap:10px;}
+  .vital-row .btn{padding:6px 14px; font-size:13px; min-width:64px;}
+  .bar{
+    flex:1; height:12px; background:var(--bg);
+    border:1px solid var(--border); border-radius:6px; overflow:hidden;
+  }
+  .bar .fill{height:100%; transition:width .3s;}
+  .bar .fill.hp{background:var(--danger);}
+  .bar .fill.food{background:#C98B3B;}
+  .vital-foot{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:12px; color:var(--text-muted); margin-bottom:12px;
+  }
+
+  /* --- Vanilla-style inventory ---
+     Everything is sized from --u (one Minecraft pixel). Set --u on
+     .pm-left above to 3px or 4px for a bigger inventory. */
+  .mc-panel{
+    position:relative;
+    width:calc(176*var(--u)); height:calc(166*var(--u));
+    background:#c6c6c6;
+    box-shadow:
+      inset calc(2*var(--u)) calc(2*var(--u)) 0 #fff,
+      inset calc(-2*var(--u)) calc(-2*var(--u)) 0 #555,
+      0 0 0 var(--u) #000;
+  }
+  .mc-panel.ender{height:calc(80*var(--u));}
+  .mc-slot{
+    position:absolute;
+    width:calc(18*var(--u)); height:calc(18*var(--u));
+    background:#8b8b8b;
+    border:var(--u) solid; border-color:#373737 #fff #fff #373737;
+  }
+  .mc-slot:hover::after{
+    content:""; position:absolute; inset:0;
+    background:rgba(255,255,255,0.5); pointer-events:none;
+  }
+  .mc-item{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;}
+  .mc-item img{
+    width:calc(16*var(--u)); height:calc(16*var(--u));
+    image-rendering:pixelated; display:block;
+  }
+  .mc-noicon{
+    font-family:'IBM Plex Mono',monospace; font-weight:600;
+    font-size:calc(6*var(--u)); color:#373737;
+  }
+  .mc-count{
+    position:absolute; right:0; bottom:0;
+    padding:0 var(--u);
+    font-family:'IBM Plex Mono',monospace; font-weight:700;
+    font-size:calc(6*var(--u)); line-height:1.1; color:#fff;
+    text-shadow:var(--u) var(--u) 0 #3f3f3f;
+    pointer-events:none;
+  }
+  .mc-label{
+    position:absolute; white-space:nowrap;
+    font-family:'IBM Plex Mono',monospace; font-weight:600;
+    font-size:calc(7*var(--u)); line-height:1; color:#404040;
+  }
+  .mc-player{
+    position:absolute;
+    width:calc(51*var(--u)); height:calc(72*var(--u));
+    background:#000;
+    border:var(--u) solid; border-color:#373737 #fff #fff #373737;
+  }
+  .mc-player canvas{display:block; width:100%; height:100%;}
+  .mc-arrow{
+    position:absolute;
+    width:calc(22*var(--u)); height:calc(15*var(--u));
+    background:#8b8b8b;
+    clip-path:polygon(0 35%, 60% 35%, 60% 0, 100% 50%, 60% 100%, 60% 65%, 0 65%);
+  }
 
   .console{
     background:#0B0D11;
@@ -495,13 +577,28 @@
   <div class="modal-back" id="playerModal" hidden>
     <div class="modal">
       <div class="modal-head"><span id="pmName"></span><button class="back" id="pmClose">&times;</button></div>
-      <div id="pmBody"></div>
-      <div class="pm-actions" id="pmActions"></div>
+      <div class="pm-layout">
+        <div class="pm-left">
+          <div class="tabs">
+            <button class="tab active" id="pmTabInv">Inventory</button>
+            <button class="tab" id="pmTabEnder">Ender chest</button>
+          </div>
+          <div id="pmInv"></div>
+        </div>
+        <div class="pm-right">
+          <div id="pmVitals"></div>
+          <div id="pmBody"></div>
+          <div class="pm-actions" id="pmActions"></div>
+        </div>
+      </div>
     </div>
   </div>
 
   <footer>Host connection is peer-to-peer through your tunnel — nothing passes through our cat.</footer>
 </div>
+
+<!-- 3D player model (Three.js based skin viewer) -->
+<script src="https://cdn.jsdelivr.net/npm/skinview3d@3.4.2/bundles/skinview3d.bundle.js"></script>
 
 <script>
 (function(){
@@ -519,6 +616,11 @@
   let knownPlayers = new Map(); // server -> [{name, uuid}]
   let playerTab = 'online';
   let openPlayer = null;        // {name, uuid, online}
+  let invView = 'inv';          // 'inv' | 'ender'
+  let lastPlayerData = null;    // last player_detail payload for the open modal
+  let skinViewer = null;        // skinview3d instance for the open modal
+  let iconDb = null;            // item id -> {readable, texture}
+  let iconDbPromise = null;
 
   const HISTORY_WINDOW_MS = 15 * 60 * 1000;
   const MAX_HISTORY = 225;
@@ -726,9 +828,9 @@
     return tps == null ? '–' : tps.toFixed(1);
   }
 
-  // Small square server icon (from the live ping's favicon) with a
-  // letter-monogram fallback for servers that haven't reported one yet
-  // (still starting up, or too old a version to send a favicon).
+  // Small square server icon. Uses the live ping favicon when given,
+  // otherwise the server-icon.png the agent read from disk (so it also
+  // shows while the server is offline), with a letter-monogram fallback.
   function iconHtml(name, iconDataUri){
     if (!iconDataUri){
       const s = servers.get(name);
@@ -859,7 +961,6 @@
     el('statsStrip').hidden = !running;
     renderPlayers(name);
     el('charts').hidden = !running || !el('chartsToggle').checked;
-    el('playersBlock').hidden = !running;
     if (!running) return;
 
     el('detailIconWrap').innerHTML = iconHtml(name, stats && stats.icon);
@@ -1052,6 +1153,11 @@
     return d.innerHTML;
   }
 
+  // For values placed inside "double quoted" HTML attributes.
+  function escapeAttr(str){
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+
   function send(obj){
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
@@ -1087,7 +1193,191 @@
     list.innerHTML = shown.map(p => `<button class="player-chip ${playerTab}" data-name="${encodeURIComponent(p.name)}" data-uuid="${encodeURIComponent(p.uuid)}"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</button>`).join('');
   }
 
+  // ---- Item icons ----
+  // Icons come from the "minecraft-textures" npm package served by
+  // jsDelivr (no local texture storage). It tries 26.3 first and falls
+  // back to 26.2; items newer than the package's data get a text tile.
+  const ICON_VERSIONS = ['26.3', '26.2'];
+
+  function loadIconDb(){
+    if (iconDbPromise) return iconDbPromise;
+    iconDbPromise = (async () => {
+      for (const v of ICON_VERSIONS){
+        try{
+          const res = await fetch(`https://cdn.jsdelivr.net/npm/minecraft-textures@26/dist/textures/json/${v}.id.json`);
+          if (!res.ok) continue;
+          const data = await res.json();
+          iconDb = data.items || data;
+          return iconDb;
+        }catch(e){ /* try the next version */ }
+      }
+      iconDb = {};
+      return iconDb;
+    })();
+    return iconDbPromise;
+  }
+
+  function prettyId(id){
+    return String(id).replace(/^minecraft:/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  function itemHtml(it){
+    const meta = iconDb && iconDb[it.id];
+    const name = meta && meta.readable ? meta.readable : prettyId(it.id);
+    const img = meta && meta.texture
+      ? `<img src="${escapeAttr(meta.texture)}" alt="">`
+      : `<span class="mc-noicon">${escapeHtml(prettyId(it.id).slice(0, 2))}</span>`;
+    const count = it.count > 1 ? `<span class="mc-count">${it.count}</span>` : '';
+    return `<div class="mc-item" title="${escapeAttr(name + ' (' + it.id + ')')}">${img}${count}</div>`;
+  }
+
+  // ---- Vanilla-style inventory ----
+  // at(x, y) places something at Minecraft GUI coordinates (the same
+  // numbers the game uses for slot positions); --u is one MC pixel.
+  const at = (x, y) => `left:calc(var(--u)*${x - 1});top:calc(var(--u)*${y - 1})`;
+
+  function slotHtml(x, y, item){
+    return `<div class="mc-slot" style="${at(x, y)}">${item ? itemHtml(item) : ''}</div>`;
+  }
+
+  function bySlot(items){
+    const m = new Map();
+    for (const it of items || []) m.set(it.slot, it);
+    return m;
+  }
+
+  function inventoryHtml(d){
+    const m = bySlot(d.inventory);
+    let h = '';
+
+    // Armor: helmet, chestplate, leggings, boots (top to bottom)
+    [103, 102, 101, 100].forEach((s, i) => { h += slotHtml(8, 8 + i * 18, m.get(s)); });
+
+    // Player model box + offhand
+    h += `<div class="mc-player" style="${at(26, 8)}"><canvas id="pmSkin"></canvas></div>`;
+    h += slotHtml(77, 62, m.get(-106) || m.get(150));
+
+    // Crafting grid (empty: the game doesn't save its contents)
+    h += `<div class="mc-label" style="${at(98, 6)}">Crafting</div>`;
+    h += slotHtml(98, 18) + slotHtml(116, 18) + slotHtml(98, 36) + slotHtml(116, 36);
+    h += `<div class="mc-arrow" style="${at(134, 29)}"></div>`;
+    h += slotHtml(154, 28);
+
+    // Main inventory (slots 9-35) and hotbar (0-8)
+    for (let r = 0; r < 3; r++){
+      for (let c = 0; c < 9; c++){
+        h += slotHtml(8 + c * 18, 84 + r * 18, m.get(9 + r * 9 + c));
+      }
+    }
+    for (let c = 0; c < 9; c++) h += slotHtml(8 + c * 18, 142, m.get(c));
+
+    return `<div class="mc-panel">${h}</div>`;
+  }
+
+  function enderHtml(d){
+    const m = bySlot(d.enderchest);
+    let h = `<div class="mc-label" style="${at(8, 6)}">Ender Chest</div>`;
+    for (let r = 0; r < 3; r++){
+      for (let c = 0; c < 9; c++){
+        h += slotHtml(8 + c * 18, 18 + r * 18, m.get(r * 9 + c));
+      }
+    }
+    return `<div class="mc-panel ender">${h}</div>`;
+  }
+
+  // ---- 3D player model ----
+  function disposeSkin(){
+    if (skinViewer){
+      try{ skinViewer.dispose(); }catch(e){ /* ignore */ }
+      skinViewer = null;
+    }
+  }
+
+  function mountSkin(uuid){
+    disposeSkin();
+    const canvas = el('pmSkin');
+    if (!canvas || !window.skinview3d) return;
+    try{
+      const box = canvas.parentElement;
+      skinViewer = new window.skinview3d.SkinViewer({
+        canvas,
+        width: box.clientWidth,
+        height: box.clientHeight,
+      });
+      if (window.skinview3d.IdleAnimation) skinViewer.animation = new window.skinview3d.IdleAnimation();
+      if (skinViewer.controls){
+        skinViewer.controls.enableZoom = false;
+        skinViewer.controls.enablePan = false;
+      }
+      // Crafatar serves skins by UUID with CORS enabled. Offline-mode
+      // servers have UUIDs Mojang doesn't know, so they get a default skin.
+      Promise.resolve(skinViewer.loadSkin(`https://crafatar.com/skins/${encodeURIComponent(uuid)}`))
+        .catch(() => { /* keep the default model */ });
+    }catch(e){
+      console.warn('3D player viewer failed:', e);
+    }
+  }
+
+  async function renderInvPane(){
+    el('pmTabInv').classList.toggle('active', invView === 'inv');
+    el('pmTabEnder').classList.toggle('active', invView === 'ender');
+    const d = lastPlayerData;
+    const pane = el('pmInv');
+    if (!d) return;
+
+    if (!d.hasData){
+      disposeSkin();
+      pane.innerHTML = '<div class="note">No inventory data saved for this player yet.</div>';
+      return;
+    }
+    if (!iconDb){
+      pane.innerHTML = '<div class="note">Loading item icons…</div>';
+      await loadIconDb();
+      if (lastPlayerData !== d || !openPlayer) return; // a newer render took over
+    }
+    if (invView === 'inv'){
+      pane.innerHTML = inventoryHtml(d);
+      mountSkin(d.uuid);
+    } else {
+      disposeSkin();
+      pane.innerHTML = enderHtml(d);
+    }
+  }
+
+  // ---- Health / hunger ----
+  function vitalsHtml(d, canAct){
+    if (!d.hasData || (d.health == null && d.food == null)) return '';
+    const n = openPlayer.name;
+    const bar = (label, val, max, cls, cmd, btnLabel) => {
+      const pct = Math.max(0, Math.min(100, (val / max) * 100));
+      return `<div class="vital">
+        <div class="vital-head"><span class="k">${label}</span><span class="v">${Math.round(val * 10) / 10} / ${max}</span></div>
+        <div class="vital-row">
+          <div class="bar"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+          <button class="btn ghost" data-cmd="${encodeURIComponent(cmd)}" ${canAct ? '' : 'disabled'}>${btnLabel}</button>
+        </div>
+      </div>`;
+    };
+    const hp = d.health ?? 0;
+    const food = d.food ?? 0;
+    return bar('Health', hp, Math.max(20, Math.ceil(hp)), 'hp', `effect give ${n} minecraft:instant_health 1 10 true`, 'Heal')
+      + bar('Hunger', food, 20, 'food', `effect give ${n} minecraft:saturation 1 10 true`, 'Feed')
+      + `<div class="vital-foot"><span>Values come from the last save.</span><button class="btn ghost small" id="pmRefresh" ${canAct ? '' : 'disabled'}>Refresh</button></div>`;
+  }
+
+  // Online players' files are only rewritten on autosave/logout, so
+  // "save-all" first, then re-read.
+  function refreshPlayer(saveFirst){
+    if (!currentServer || !openPlayer) return;
+    if (saveFirst) send({type:'command', server: currentServer, text:'save-all'});
+    const uuid = openPlayer.uuid;
+    setTimeout(() => {
+      if (openPlayer && openPlayer.uuid === uuid) send({type:'get_player', server: currentServer, uuid});
+    }, saveFirst ? 1500 : 300);
+  }
+
   function renderPlayerModal(d){
+    lastPlayerData = d;
     const s = servers.get(currentServer);
     const running = s && s.status === 'online';
     const row = (k, v) => `<div class="pm-row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
@@ -1099,8 +1389,6 @@
     if (d.hasData){
       rows.push(row('Position', `${fmtPos(d.pos)} ${fmtDim(d.dimension)}`));
       rows.push(row('Last death', d.death ? `${fmtPos(d.death.pos)} ${fmtDim(d.death.dimension)}` : 'None recorded'));
-      if (d.health != null) rows.push(row('Health', Math.round(d.health * 10) / 10));
-      if (d.food != null) rows.push(row('Food', d.food));
       if (d.xpLevel != null) rows.push(row('XP level', d.xpLevel));
       if (d.gameMode != null) rows.push(row('Game mode', GAMEMODES[d.gameMode] || d.gameMode));
     }
@@ -1115,6 +1403,8 @@
     const f = d.flags || {};
     const badges = [f.op && 'Operator', f.whitelisted && 'Whitelisted', f.banned && 'Banned'].filter(Boolean);
     if (badges.length) rows.push(row('Status', badges.join(', ')));
+
+    el('pmVitals').innerHTML = vitalsHtml(d, running && openPlayer.online);
     el('pmBody').innerHTML = rows.join('');
 
     const n = openPlayer.name;
@@ -1126,10 +1416,14 @@
       f.whitelisted ? btn('Remove from whitelist', `whitelist remove ${n}`) : btn('Whitelist', `whitelist add ${n}`),
       f.op ? btn('Deop', `deop ${n}`) : btn('Make operator', `op ${n}`),
     ].join('');
+
+    renderInvPane();
   }
 
   function closePlayerModal(){
     openPlayer = null;
+    lastPlayerData = null;
+    disposeSkin();
     el('playerModal').hidden = true;
   }
 
@@ -1140,6 +1434,9 @@
     if (currentServer) send({type:'get_players', server:currentServer});
   });
 
+  el('pmTabInv').addEventListener('click', () => { invView = 'inv'; renderInvPane(); });
+  el('pmTabEnder').addEventListener('click', () => { invView = 'ender'; renderInvPane(); });
+
   el('playerList').addEventListener('click', (e) => {
     const chip = e.target.closest('.player-chip');
     if (!chip || !currentServer) return;
@@ -1148,11 +1445,28 @@
       uuid: decodeURIComponent(chip.dataset.uuid),
       online: playerTab === 'online',
     };
+    lastPlayerData = null;
+    invView = 'inv';
+    disposeSkin();
     el('pmName').textContent = openPlayer.name;
+    el('pmVitals').innerHTML = '';
+    el('pmInv').innerHTML = '';
     el('pmBody').innerHTML = '<div class="note">Loading…</div>';
     el('pmActions').innerHTML = '';
+    el('pmTabInv').classList.add('active');
+    el('pmTabEnder').classList.remove('active');
     el('playerModal').hidden = false;
     send({type:'get_player', server: currentServer, uuid: openPlayer.uuid});
+  });
+
+  el('pmVitals').addEventListener('click', (e) => {
+    if (!currentServer || !openPlayer) return;
+    if (e.target.closest('#pmRefresh')){ refreshPlayer(true); return; }
+    const b = e.target.closest('button[data-cmd]');
+    if (!b) return;
+    send({type:'command', server: currentServer, text: decodeURIComponent(b.dataset.cmd)});
+    // Give the effect a moment to apply, then save and re-read.
+    setTimeout(() => refreshPlayer(true), 600);
   });
 
   el('pmActions').addEventListener('click', (e) => {
