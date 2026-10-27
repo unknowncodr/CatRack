@@ -53,7 +53,9 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:0px 24px;
     border-bottom:1px solid var(--border);
-    background:var(--surface);
+    background:rgba(24,27,34,0.78);
+    -webkit-backdrop-filter:blur(16px);
+    backdrop-filter:blur(16px);
   }
   .brand{display:flex; align-items:center; gap:10px; font-weight:600; letter-spacing:0.02em;}
   .brand .mark{
@@ -232,6 +234,28 @@
     gap:10px;
     margin-bottom:16px;
   }
+  .charts-toggle-row{display:flex; justify-content:flex-end; margin-bottom:10px;}
+  .charts-toggle{
+    display:flex; align-items:center; gap:10px;
+    margin:0; color:var(--text-muted); font-size:12px; cursor:pointer;
+  }
+  .charts-toggle input{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap;
+  }
+  .charts-toggle .track{
+    width:36px; height:20px; padding:2px;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:999px;
+    transition:background .15s, border-color .15s;
+  }
+  .charts-toggle .track::before{
+    content:""; display:block; width:14px; height:14px;
+    background:var(--text-muted); border-radius:50%;
+    transition:transform .15s, background .15s;
+  }
+  .charts-toggle input:checked + .track{background:var(--accent-dim); border-color:var(--accent);}
+  .charts-toggle input:checked + .track::before{transform:translateX(16px); background:var(--accent);}
+  .charts-toggle input:focus-visible + .track{outline:2px solid var(--accent); outline-offset:2px;}
   .chart-card{
     background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
     padding:10px 12px 6px;
@@ -426,6 +450,13 @@
         <div class="chip"><div class="k">TPS</div><div class="v" id="statTps">–</div></div>
       </div>
 
+      <div class="charts-toggle-row">
+        <label class="charts-toggle" for="chartsToggle">
+          <span>Show performance charts</span>
+          <input type="checkbox" id="chartsToggle" aria-controls="charts" checked>
+          <span class="track" aria-hidden="true"></span>
+        </label>
+      </div>
       <div class="charts" id="charts" hidden>
         <div class="chart-card">
           <div class="chart-head"><span class="k">CPU</span><span class="cv" id="chartCpuVal">–</span></div>
@@ -827,7 +858,7 @@
 
     el('statsStrip').hidden = !running;
     renderPlayers(name);
-    el('charts').hidden = !running;
+    el('charts').hidden = !running || !el('chartsToggle').checked;
     el('playersBlock').hidden = !running;
     if (!running) return;
 
@@ -1167,6 +1198,13 @@
 
   window.addEventListener('resize', () => {
     if (currentServer) drawCharts(currentServer);
+  });
+
+  el('chartsToggle').addEventListener('change', () => {
+    const s = servers.get(currentServer);
+    const showCharts = el('chartsToggle').checked && s && s.status === 'online';
+    el('charts').hidden = !showCharts;
+    if (showCharts) drawCharts(currentServer);
   });
 
   el('powerBtn').addEventListener('click', () => {
