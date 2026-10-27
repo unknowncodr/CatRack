@@ -843,17 +843,6 @@
       : '–';
     tpsEl.className = 'v ' + (stats ? tpsClass(stats.tps) : '');
 
-    const playerList = el('playerList');
-    const sample = stats && stats.players && stats.players.sample || [];
-    if (!sample.length){
-      const online = stats && stats.players ? stats.players.online : 0;
-      playerList.innerHTML = online > 0
-        ? '<span class="none">Players online, but no names reported.</span>'
-        : '<span class="none">No players online.</span>';
-    } else {
-      playerList.innerHTML = sample.map(p => `<span class="player-chip"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</span>`).join('');
-    }
-
     drawCharts(name);
   }
 
@@ -1113,7 +1102,11 @@
   }
 
   el('tabOnline').addEventListener('click', () => { playerTab = 'online'; renderPlayers(currentServer); });
-  el('tabOffline').addEventListener('click', () => { playerTab = 'offline'; renderPlayers(currentServer); });
+  el('tabOffline').addEventListener('click', () => {
+    playerTab = 'offline';
+    renderPlayers(currentServer);
+    if (currentServer) send({type:'get_players', server:currentServer});
+  });
 
   el('playerList').addEventListener('click', (e) => {
     const chip = e.target.closest('.player-chip');
