@@ -21,6 +21,7 @@
     --offline: #565C6B;
     --danger: #E1462F;
     --danger-dim: #3A2420;
+    --ram: #9B87F5;
     --radius: 10px;
   }
 
@@ -223,6 +224,27 @@
   .stats-strip .chip .v.tps-bad{color:var(--danger);}
   .stats-strip .chip .v.muted{color:var(--text-muted); font-weight:500;}
 
+  /* --- Charts --- */
+  .charts{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));
+    gap:10px;
+    margin-bottom:16px;
+  }
+  .chart-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:10px 12px 6px;
+    min-width:0;
+  }
+  .chart-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin-bottom:4px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .chart-head .k{font-size:10.5px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;}
+  .chart-head .cv{font-size:13px; font-weight:600;}
+  .chart-card canvas{display:block; width:100%; height:120px;}
+
   .players-block{margin-bottom:16px;}
   .players-block .k{font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px;}
   .player-list{display:flex; flex-wrap:wrap; gap:6px;}
@@ -403,6 +425,21 @@
         <div class="chip"><div class="k">TPS</div><div class="v" id="statTps">–</div></div>
       </div>
 
+      <div class="charts" id="charts" hidden>
+        <div class="chart-card">
+          <div class="chart-head"><span class="k">CPU</span><span class="cv" id="chartCpuVal">–</span></div>
+          <canvas id="chartCpu"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><span class="k">RAM</span><span class="cv" id="chartRamVal">–</span></div>
+          <canvas id="chartRam"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><span class="k">TPS</span><span class="cv" id="chartTpsVal">–</span></div>
+          <canvas id="chartTps"></canvas>
+        </div>
+      </div>
+
       <div class="players-block" id="playersBlock">
         <div class="tabs">
           <button class="tab active" id="tabOnline">Online <span id="tabOnlineCount">0</span></button>
@@ -441,7 +478,8 @@
   // ---- State ----
   let ws = null;
   let servers = new Map();      // name -> {name, version, port, status, icon}
-  let serverStats = new Map();  // name -> {uptimeMs, cpu, memoryMB, players, icon, motd, tps}
+  let serverStats = new Map();  // name -> {uptimeMs, cpu, memoryMB, players, icon, motd, tps, mspt}
+  let history = new Map();      // name -> [{t, cpu, memoryMB, tps, mspt}] for the graphs
   let consoleLines = new Map(); // name -> [lines]
   let cardEls = new Map();      // name -> card DOM element (for lightweight stat updates)
   let currentServer = null;
@@ -449,6 +487,9 @@
   let knownPlayers = new Map(); // server -> [{name, uuid}]
   let playerTab = 'online';
   let openPlayer = null;        // {name, uuid, online}
+
+  const HISTORY_WINDOW_MS = 15 * 60 * 1000;
+  const MAX_HISTORY = 225;
 
   // ---- Elements ----
   const el = (id) => document.getElementById(id);
@@ -506,7 +547,14 @@
     ws.onopen = () => {
       save(url, token);
       setHostStatus(true);
-      showView('grid');
+      if (currentServer){
+        // Reconnected while a server view was open: stay on it and
+        // re-subscribe, since the agent forgot us when the socket dropped.
+        showView('detail');
+        send({type:'watch', server: currentServer});
+      } else {
+        showView('grid');
+      }
     };
 
     ws.onmessage = (event) => {
@@ -538,6 +586,11 @@
     switch(msg.type){
       case 'server_list':
         servers = new Map(msg.servers.map(s => [s.name, s]));
+        // Graph history only makes sense for a running process.
+        for (const name of Array.from(history.keys())){
+          const s = servers.get(name);
+          if (!s || s.status !== 'online') history.delete(name);
+        }
         renderGrid();
         if (currentServer){
           renderDetailHeader();
@@ -559,6 +612,15 @@
         if (currentServer === msg.server) renderConsoleFull(msg.lines);
         break;
 
+      case 'history': {
+        // Agent timestamps are on the host's clock; shift them onto ours
+        // so the time axis lines up with samples we add locally.
+        const offset = Date.now() - msg.now;
+        history.set(msg.server, msg.samples.map(s => ({ ...s, t: s.t + offset })));
+        if (currentServer === msg.server) updateDetailStats(msg.server);
+        break;
+      }
+
       case 'status_change':
         // server_list message that follows will refresh card/detail state
         break;
@@ -566,9 +628,10 @@
       case 'stats': {
         const prev = serverStats.get(msg.server) || {};
         // msg.data only carries keys that changed this tick (e.g. TPS
-        // is only sampled every ~10s) — merge so untouched fields (like
+        // is only sampled every ~5s) — merge so untouched fields (like
         // a still-current TPS reading) don't flicker back to unknown.
         serverStats.set(msg.server, { ...prev, ...msg.data });
+        pushSample(msg.server, msg.data);
         updateCardStats(msg.server);
         if (currentServer === msg.server) updateDetailStats(msg.server);
         break;
@@ -583,11 +646,28 @@
         if (openPlayer && openPlayer.uuid === msg.uuid && currentServer === msg.server) renderPlayerModal(msg.data);
         break;
 
+
       case 'error':
         console.warn('Agent error:', msg.error);
         if (!detailView.hidden) showSettingsError(msg.error);
         break;
     }
+  }
+
+  // Adds one point to the graph history. TPS/MSPT are only present on
+  // ticks where the agent actually sampled them, otherwise null (the
+  // graph just connects the points it has).
+  function pushSample(name, data){
+    let h = history.get(name);
+    if (!h){ h = []; history.set(name, h); }
+    h.push({
+      t: Date.now(),
+      cpu: data.cpu ?? null,
+      memoryMB: data.memoryMB ?? null,
+      tps: data.tps ?? null,
+      mspt: data.mspt ?? null,
+    });
+    while (h.length > MAX_HISTORY) h.shift();
   }
 
   // ---- Formatting helpers ----
@@ -614,9 +694,9 @@
     return tps == null ? '–' : tps.toFixed(1);
   }
 
-  // Small square server icon. Uses the live ping favicon when given,
-  // otherwise the server-icon.png the agent read from disk (so it also
-  // shows while the server is offline), with a letter-monogram fallback.
+  // Small square server icon (from the live ping's favicon) with a
+  // letter-monogram fallback for servers that haven't reported one yet
+  // (still starting up, or too old a version to send a favicon).
   function iconHtml(name, iconDataUri){
     if (!iconDataUri){
       const s = servers.get(name);
@@ -693,6 +773,10 @@
     renderDetailHeader();
     updateDetailStats(name);
 
+    // Tell the agent we're looking at this server: it starts polling
+    // TPS for it and replies with the graph history.
+    send({type:'watch', server:name});
+
     const cached = consoleLines.get(name);
     if (cached && cached.length){
       renderConsoleFull(cached);
@@ -731,9 +815,10 @@
     el('cmdSend').disabled = !running;
   }
 
-  // Updates the stats strip + player list for whichever server is
-  // currently open. Safe to call even if no stats have arrived yet —
-  // everything just falls back to "–" until the first poll comes in.
+  // Updates the stats strip, graphs and player list for whichever
+  // server is currently open. Safe to call even if no stats have
+  // arrived yet — everything just falls back to "–" until the first
+  // poll comes in.
   function updateDetailStats(name){
     const s = servers.get(name);
     const stats = serverStats.get(name);
@@ -741,6 +826,8 @@
 
     el('statsStrip').hidden = !running;
     renderPlayers(name);
+    el('charts').hidden = !running;
+    el('playersBlock').hidden = !running;
     if (!running) return;
 
     el('detailIconWrap').innerHTML = iconHtml(name, stats && stats.icon);
@@ -751,8 +838,155 @@
     el('statUptime').textContent = stats && stats.uptimeMs != null ? formatUptime(stats.uptimeMs) : '–';
 
     const tpsEl = el('statTps');
-    tpsEl.textContent = stats ? formatTps(stats.tps) : '–';
+    tpsEl.textContent = stats && stats.tps != null
+      ? formatTps(stats.tps) + (stats.mspt != null ? ` · ${stats.mspt.toFixed(1)}ms` : '')
+      : '–';
     tpsEl.className = 'v ' + (stats ? tpsClass(stats.tps) : '');
+
+    const playerList = el('playerList');
+    const sample = stats && stats.players && stats.players.sample || [];
+    if (!sample.length){
+      const online = stats && stats.players ? stats.players.online : 0;
+      playerList.innerHTML = online > 0
+        ? '<span class="none">Players online, but no names reported.</span>'
+        : '<span class="none">No players online.</span>';
+    } else {
+      playerList.innerHTML = sample.map(p => `<span class="player-chip"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</span>`).join('');
+    }
+
+    drawCharts(name);
+  }
+
+  // ---- Charts ----
+  function drawCharts(name){
+    if (!name || name !== currentServer) return;
+    const s = servers.get(name);
+    const stats = serverStats.get(name) || {};
+    const samples = history.get(name) || [];
+
+    const series = (key) => samples
+      .filter(p => p[key] != null)
+      .map(p => ({ t: p.t, v: p[key] }));
+
+    const cpu = series('cpu');
+    const ram = series('memoryMB');
+    const tps = series('tps');
+
+    drawChart(el('chartCpu'), cpu, {
+      color: cssVar('--accent'), floor: 100,
+      fmt: (v) => Math.round(v) + '%',
+    });
+    drawChart(el('chartRam'), ram, {
+      color: cssVar('--ram'), floor: (s && s.ramMB) || 1024,
+      fmt: (v) => v >= 1024 ? (v / 1024).toFixed(1) + 'G' : Math.round(v) + 'M',
+    });
+    drawChart(el('chartTps'), tps, {
+      color: cssVar('--online'), max: 20,
+      fmt: (v) => String(Math.round(v)),
+      emptyText: stats.tps == null ? 'TPS unavailable (needs 1.20.3+)' : 'No data yet',
+    });
+
+    el('chartCpuVal').textContent = stats.cpu != null ? `${stats.cpu}%` : '–';
+    el('chartRamVal').textContent = stats.memoryMB != null ? `${stats.memoryMB} MB` : '–';
+    el('chartTpsVal').textContent = stats.tps != null
+      ? formatTps(stats.tps) + (stats.mspt != null ? ` · ${stats.mspt.toFixed(1)} ms/tick` : '')
+      : '–';
+  }
+
+  function cssVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // Minimal line chart on a <canvas>: fixed 15-minute window ending
+  // "now", y axis from 0 to opts.max (or auto-scaled, never below
+  // opts.floor).
+  function drawChart(canvas, pts, opts){
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (!w || !h) return;
+
+    const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+    if (canvas.width !== bw || canvas.height !== bh){
+      canvas.width = bw;
+      canvas.height = bh;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const border = cssVar('--border');
+    const muted = cssVar('--text-muted');
+    const padL = 38, padR = 6, padT = 8, padB = 16;
+    const pw = w - padL - padR;
+    const ph = h - padT - padB;
+    const now = Date.now();
+
+    let max = opts.max;
+    if (max == null){
+      let dataMax = 0;
+      for (const p of pts) if (p.v > dataMax) dataMax = p.v;
+      max = Math.max(opts.floor || 1, dataMax) * 1.1;
+    }
+    const xOf = (t) => padL + pw * (1 - (now - t) / HISTORY_WINDOW_MS);
+    const yOf = (v) => padT + ph * (1 - Math.min(v, max) / max);
+
+    // Grid + y labels
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.lineWidth = 1;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'right';
+    for (const frac of [0, 0.5, 1]){
+      const gy = Math.round(padT + ph * (1 - frac)) + 0.5;
+      ctx.strokeStyle = border;
+      ctx.beginPath();
+      ctx.moveTo(padL, gy);
+      ctx.lineTo(w - padR, gy);
+      ctx.stroke();
+      ctx.fillStyle = muted;
+      ctx.fillText(opts.fmt(max * frac), padL - 6, gy);
+    }
+
+    // x labels
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = muted;
+    ctx.fillText('-15m', padL, h - 3);
+    ctx.textAlign = 'right';
+    ctx.fillText('now', w - padR, h - 3);
+
+    if (!pts.length){
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(opts.emptyText || 'No data yet', padL + pw / 2, padT + ph / 2);
+      return;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padL, padT - 2, pw + 2, ph + 4);
+    ctx.clip();
+
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const x = xOf(p.t), y = yOf(p.v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = 1.75;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Soft fill under the line
+    ctx.lineTo(xOf(pts[pts.length - 1].t), padT + ph);
+    ctx.lineTo(xOf(pts[0].t), padT + ph);
+    ctx.closePath();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = opts.color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.restore();
   }
 
   function renderConsoleFull(lines){
@@ -925,14 +1159,20 @@
     clearSaved();
     servers.clear();
     consoleLines.clear();
+    history.clear();
     currentServer = null;
     showView('login');
   });
 
   el('backBtn').addEventListener('click', () => {
     closePlayerModal();
+    send({type:'unwatch'});
     currentServer = null;
     showView('grid');
+  });
+
+  window.addEventListener('resize', () => {
+    if (currentServer) drawCharts(currentServer);
   });
 
   el('powerBtn').addEventListener('click', () => {
