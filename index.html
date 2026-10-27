@@ -1293,6 +1293,42 @@
     }
   }
 
+  // Skin sources, tried in order until one loads:
+  //  1. mc-api.io profile -> the skin URL on Mojang's texture server
+  //  2. mineatar.io raw skin
+  //  3. crafatar.com (was returning 500s, so last)
+  // Offline-mode servers have UUIDs Mojang doesn't know; those just keep
+  // the default model. Resolved URLs are cached to stay under mc-api.io's
+  // 60 requests/minute limit.
+  const skinUrlCache = new Map();
+
+  async function mojangSkinUrl(uuid){
+    if (skinUrlCache.has(uuid)) return skinUrlCache.get(uuid);
+    const res = await fetch(`https://mc-api.io/profile/${encodeURIComponent(uuid)}`);
+    if (!res.ok) throw new Error('profile lookup failed');
+    const data = await res.json();
+    const url = data && data.decodedTexture && data.decodedTexture.textures
+      && data.decodedTexture.textures.SKIN && data.decodedTexture.textures.SKIN.url;
+    if (!url) throw new Error('no skin in profile');
+    skinUrlCache.set(uuid, url);
+    return url;
+  }
+
+  async function loadSkinFor(viewer, uuid){
+    const sources = [
+      () => mojangSkinUrl(uuid),
+      () => `https://api.mineatar.io/skin/${encodeURIComponent(uuid)}`,
+      () => `https://crafatar.com/skins/${encodeURIComponent(uuid)}`,
+    ];
+    for (const getUrl of sources){
+      if (skinViewer !== viewer) return; // modal closed or re-rendered
+      try{
+        await viewer.loadSkin(await getUrl());
+        return;
+      }catch(e){ /* try the next source */ }
+    }
+  }
+
   function mountSkin(uuid){
     disposeSkin();
     const canvas = el('pmSkin');
@@ -1309,10 +1345,7 @@
         skinViewer.controls.enableZoom = false;
         skinViewer.controls.enablePan = false;
       }
-      // Crafatar serves skins by UUID with CORS enabled. Offline-mode
-      // servers have UUIDs Mojang doesn't know, so they get a default skin.
-      Promise.resolve(skinViewer.loadSkin(`https://crafatar.com/skins/${encodeURIComponent(uuid)}`))
-        .catch(() => { /* keep the default model */ });
+      loadSkinFor(skinViewer, uuid);
     }catch(e){
       console.warn('3D player viewer failed:', e);
     }
