@@ -230,8 +230,38 @@
     background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
     padding:4px 4px; font-size:12px; font-family:'IBM Plex Mono',monospace;
     display:flex; align-items:center; gap:4px;
+    color:var(--text); cursor:pointer;
   }
   .player-list .none{font-size:12px; color:var(--text-muted); font-style:italic; font-family:inherit;}
+
+  /* --- Player tabs + modal --- */
+  .tabs{display:flex; gap:6px; margin-bottom:10px;}
+  .tab{
+    background:none; border:1px solid var(--border); border-radius:8px;
+    padding:5px 12px; font-size:12px; color:var(--text-muted);
+  }
+  .tab.active{background:var(--surface-2); color:var(--text); border-color:var(--accent);}
+  .player-chip.offline{opacity:0.65;}
+
+  .modal-back{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .modal{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:20px; width:100%; max-width:440px; max-height:90vh; overflow-y:auto;
+  }
+  .modal-head{
+    display:flex; justify-content:space-between; align-items:center;
+    font-weight:700; font-size:16px; margin-bottom:14px;
+  }
+  .pm-row{
+    display:flex; justify-content:space-between; gap:12px; padding:6px 0;
+    border-bottom:1px solid var(--border); font-size:13px;
+  }
+  .pm-row .k{color:var(--text-muted);}
+  .pm-row .v{font-family:'IBM Plex Mono',monospace; text-align:right;}
+  .pm-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;}
 
   .console{
     background:#0B0D11;
@@ -373,8 +403,11 @@
         <div class="chip"><div class="k">TPS</div><div class="v" id="statTps">–</div></div>
       </div>
 
-      <div class="players-block" id="playersBlock" hidden>
-        <div class="k">Players online</div>
+      <div class="players-block" id="playersBlock">
+        <div class="tabs">
+          <button class="tab active" id="tabOnline">Online <span id="tabOnlineCount">0</span></button>
+          <button class="tab" id="tabOffline">Offline <span id="tabOfflineCount">0</span></button>
+        </div>
         <div class="player-list" id="playerList"></div>
       </div>
 
@@ -390,6 +423,14 @@
 
   </main>
 
+  <div class="modal-back" id="playerModal" hidden>
+    <div class="modal">
+      <div class="modal-head"><span id="pmName"></span><button class="back" id="pmClose">&times;</button></div>
+      <div id="pmBody"></div>
+      <div class="pm-actions" id="pmActions"></div>
+    </div>
+  </div>
+
   <footer>Host connection is peer-to-peer through your tunnel — nothing passes through our cat.</footer>
 </div>
 
@@ -399,12 +440,15 @@
 
   // ---- State ----
   let ws = null;
-  let servers = new Map();      // name -> {name, version, port, status}
+  let servers = new Map();      // name -> {name, version, port, status, icon}
   let serverStats = new Map();  // name -> {uptimeMs, cpu, memoryMB, players, icon, motd, tps}
   let consoleLines = new Map(); // name -> [lines]
   let cardEls = new Map();      // name -> card DOM element (for lightweight stat updates)
   let currentServer = null;
   let reconnectTimer = null;
+  let knownPlayers = new Map(); // server -> [{name, uuid}]
+  let playerTab = 'online';
+  let openPlayer = null;        // {name, uuid, online}
 
   // ---- Elements ----
   const el = (id) => document.getElementById(id);
@@ -530,6 +574,15 @@
         break;
       }
 
+      case 'known_players':
+        knownPlayers.set(msg.server, msg.players);
+        if (currentServer === msg.server) renderPlayers(msg.server);
+        break;
+
+      case 'player_detail':
+        if (openPlayer && openPlayer.uuid === msg.uuid && currentServer === msg.server) renderPlayerModal(msg.data);
+        break;
+
       case 'error':
         console.warn('Agent error:', msg.error);
         if (!detailView.hidden) showSettingsError(msg.error);
@@ -560,10 +613,10 @@
   function formatTps(tps){
     return tps == null ? '–' : tps.toFixed(1);
   }
-  
-  // Small square server icon (from the live ping's favicon) with a
-  // letter-monogram fallback for servers that haven't reported one yet
-  // (still starting up, or too old a version to send a favicon).
+
+  // Small square server icon. Uses the live ping favicon when given,
+  // otherwise the server-icon.png the agent read from disk (so it also
+  // shows while the server is offline), with a letter-monogram fallback.
   function iconHtml(name, iconDataUri){
     if (!iconDataUri){
       const s = servers.get(name);
@@ -635,6 +688,8 @@
   function openDetail(name){
     currentServer = name;
     showView('detail');
+    playerTab = 'online';
+    send({type:'get_players', server:name});
     renderDetailHeader();
     updateDetailStats(name);
 
@@ -685,7 +740,7 @@
     const running = s && s.status === 'online';
 
     el('statsStrip').hidden = !running;
-    el('playersBlock').hidden = !running;
+    renderPlayers(name);
     if (!running) return;
 
     el('detailIconWrap').innerHTML = iconHtml(name, stats && stats.icon);
@@ -698,17 +753,6 @@
     const tpsEl = el('statTps');
     tpsEl.textContent = stats ? formatTps(stats.tps) : '–';
     tpsEl.className = 'v ' + (stats ? tpsClass(stats.tps) : '');
-
-    const playerList = el('playerList');
-    const sample = stats && stats.players && stats.players.sample || [];
-    if (!sample.length){
-      const online = stats && stats.players ? stats.players.online : 0;
-      playerList.innerHTML = online > 0
-        ? '<span class="none">Players online, but no names reported.</span>'
-        : '<span class="none">No players online.</span>';
-    } else {
-      playerList.innerHTML = sample.map(p => `<span class="player-chip"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</span>`).join('');
-    }
   }
 
   function renderConsoleFull(lines){
@@ -757,6 +801,114 @@
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
 
+  // ---- Players ----
+  const GAMEMODES = ['Survival', 'Creative', 'Adventure', 'Spectator'];
+  const fmtPos = (p) => p ? p.map(n => Math.round(n)).join(', ') : '–';
+  const fmtDim = (d) => d ? d.replace('minecraft:', '') : '';
+
+  function renderPlayers(name){
+    const s = servers.get(name);
+    const running = s && s.status === 'online';
+    const stats = serverStats.get(name);
+    const sample = (running && stats && stats.players && stats.players.sample) || [];
+    const onlineNames = new Set(sample.map(p => p.name.toLowerCase()));
+    const offline = (knownPlayers.get(name) || []).filter(p => !onlineNames.has(p.name.toLowerCase()));
+
+    el('tabOnlineCount').textContent = sample.length;
+    el('tabOfflineCount').textContent = offline.length;
+    el('tabOnline').classList.toggle('active', playerTab === 'online');
+    el('tabOffline').classList.toggle('active', playerTab === 'offline');
+
+    const list = el('playerList');
+    const shown = playerTab === 'online' ? sample.map(p => ({name: p.name, uuid: p.id})) : offline;
+    if (!shown.length){
+      let msg = 'No players online.';
+      if (playerTab === 'offline') msg = 'No other known players.';
+      else if (!running) msg = 'Server is offline.';
+      else if (stats && stats.players && stats.players.online > 0) msg = 'Players online, but no names reported.';
+      list.innerHTML = `<span class="none">${msg}</span>`;
+      return;
+    }
+    list.innerHTML = shown.map(p => `<button class="player-chip ${playerTab}" data-name="${encodeURIComponent(p.name)}" data-uuid="${encodeURIComponent(p.uuid)}"><img src="https://api.mcheads.org/head/${encodeURIComponent(p.name)}/16" alt="" width="16" height="16" loading="lazy">${escapeHtml(p.name)}</button>`).join('');
+  }
+
+  function renderPlayerModal(d){
+    const s = servers.get(currentServer);
+    const running = s && s.status === 'online';
+    const row = (k, v) => `<div class="pm-row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+    const rows = [];
+
+    if (!d.hasData && !d.stats){
+      rows.push('<div class="note">No saved data found for this player yet.</div>');
+    }
+    if (d.hasData){
+      rows.push(row('Position', `${fmtPos(d.pos)} ${fmtDim(d.dimension)}`));
+      rows.push(row('Last death', d.death ? `${fmtPos(d.death.pos)} ${fmtDim(d.death.dimension)}` : 'None recorded'));
+      if (d.health != null) rows.push(row('Health', Math.round(d.health * 10) / 10));
+      if (d.food != null) rows.push(row('Food', d.food));
+      if (d.xpLevel != null) rows.push(row('XP level', d.xpLevel));
+      if (d.gameMode != null) rows.push(row('Game mode', GAMEMODES[d.gameMode] || d.gameMode));
+    }
+    if (d.stats){
+      rows.push(row('Play time', (d.stats.playTimeTicks / 72000).toFixed(1) + ' h'));
+      rows.push(row('Deaths', d.stats.deaths));
+      rows.push(row('Mob kills', d.stats.mobKills));
+      rows.push(row('Player kills', d.stats.playerKills));
+      rows.push(row('Jumps', d.stats.jumps));
+      rows.push(row('Walked', (d.stats.walkCm / 100000).toFixed(1) + ' km'));
+    }
+    const f = d.flags || {};
+    const badges = [f.op && 'Operator', f.whitelisted && 'Whitelisted', f.banned && 'Banned'].filter(Boolean);
+    if (badges.length) rows.push(row('Status', badges.join(', ')));
+    el('pmBody').innerHTML = rows.join('');
+
+    const n = openPlayer.name;
+    const btn = (label, cmd, cls = 'ghost', off = false) =>
+      `<button class="btn ${cls}" data-cmd="${encodeURIComponent(cmd)}" ${running && !off ? '' : 'disabled'}>${label}</button>`;
+    el('pmActions').innerHTML = [
+      btn('Kick', `kick ${n}`, 'ghost', !openPlayer.online),
+      f.banned ? btn('Unban', `pardon ${n}`) : btn('Ban', `ban ${n}`, 'danger'),
+      f.whitelisted ? btn('Remove from whitelist', `whitelist remove ${n}`) : btn('Whitelist', `whitelist add ${n}`),
+      f.op ? btn('Deop', `deop ${n}`) : btn('Make operator', `op ${n}`),
+    ].join('');
+  }
+
+  function closePlayerModal(){
+    openPlayer = null;
+    el('playerModal').hidden = true;
+  }
+
+  el('tabOnline').addEventListener('click', () => { playerTab = 'online'; renderPlayers(currentServer); });
+  el('tabOffline').addEventListener('click', () => { playerTab = 'offline'; renderPlayers(currentServer); });
+
+  el('playerList').addEventListener('click', (e) => {
+    const chip = e.target.closest('.player-chip');
+    if (!chip || !currentServer) return;
+    openPlayer = {
+      name: decodeURIComponent(chip.dataset.name),
+      uuid: decodeURIComponent(chip.dataset.uuid),
+      online: playerTab === 'online',
+    };
+    el('pmName').textContent = openPlayer.name;
+    el('pmBody').innerHTML = '<div class="note">Loading…</div>';
+    el('pmActions').innerHTML = '';
+    el('playerModal').hidden = false;
+    send({type:'get_player', server: currentServer, uuid: openPlayer.uuid});
+  });
+
+  el('pmActions').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cmd]');
+    if (!b || !currentServer || !openPlayer) return;
+    const text = decodeURIComponent(b.dataset.cmd);
+    if (text.startsWith('ban ') && !confirm(`Ban ${openPlayer.name}?`)) return;
+    send({type:'command', server: currentServer, text});
+    // Re-fetch shortly after so the buttons/status reflect the change.
+    setTimeout(() => { if (openPlayer) send({type:'get_player', server: currentServer, uuid: openPlayer.uuid}); }, 800);
+  });
+
+  el('pmClose').addEventListener('click', closePlayerModal);
+  el('playerModal').addEventListener('click', (e) => { if (e.target.id === 'playerModal') closePlayerModal(); });
+
   // ---- Event wiring ----
   el('connectBtn').addEventListener('click', () => {
     const url = el('tunnelUrl').value.trim();
@@ -778,6 +930,7 @@
   });
 
   el('backBtn').addEventListener('click', () => {
+    closePlayerModal();
     currentServer = null;
     showView('grid');
   });
