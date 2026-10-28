@@ -1,0 +1,29 @@
+{
+  "name": "catrack-desktop",
+  "version": "1.0.0",
+  "description": "Browser dashboard for monitoring and managing Minecraft servers",
+  "main": "index.html",
+  "scripts": {
+    "start": "dist\\catrack-desktop.exe",
+    "dev": "nwbuild --mode run --glob false \"%INIT_CWD%\"",
+    "build": "nwbuild --mode build --platform win --outDir dist \"*.html *.json *.png\"",
+    "package": "nwbuild --mode package --platform win --outDir dist \"*.html *.json *.png\""
+  },
+  "author": "Nomyi",
+  "devDependencies": {
+    "nw-builder": "^4.24.0"
+  },
+  "window": {
+    "title": "Cat Rack",
+    "icon": "caticon.png",
+    "width": 1024,
+    "height": 768,
+    "position": "center",
+    "toolbar": false
+  },
+  "nwbuild": {
+    "app": {
+      "icon": "caticon.ico"
+    }
+  }
+}
