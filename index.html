@@ -621,6 +621,7 @@
   let skinViewer = null;        // skinview3d instance for the open modal
   let iconDb = null;            // item id -> {readable, texture}
   let iconDbPromise = null;
+  let perms = { admin: false, console: false }; // what this connection's token may do
 
   const HISTORY_WINDOW_MS = 15 * 60 * 1000;
   const MAX_HISTORY = 225;
@@ -718,6 +719,13 @@
 
   function handleMessage(msg){
     switch(msg.type){
+      case 'permissions':
+        // Sent by the agent right after connecting; says what this token
+        // may do. The agent enforces it too — this just hides the controls.
+        perms = msg;
+        applyPermissions();
+        break;
+
       case 'server_list':
         servers = new Map(msg.servers.map(s => [s.name, s]));
         // Graph history only makes sense for a running process.
@@ -786,6 +794,18 @@
         if (!detailView.hidden) showSettingsError(msg.error);
         break;
     }
+  }
+
+  // Hides the controls this token can't use. Admin = start/stop/restart
+  // and RAM/port settings. Console = console output, command box and
+  // player actions (kick/ban/op/... are sent as console commands).
+  function applyPermissions(){
+    document.querySelector('.settings-panel').hidden = !perms.admin;
+    el('restartBtn').hidden = !perms.admin;
+    el('powerBtn').hidden = !perms.admin;
+    el('console').hidden = !perms.console;
+    document.querySelector('.cmd-row').hidden = !perms.console;
+    el('pmActions').hidden = !perms.console;
   }
 
   // Adds one point to the graph history. TPS/MSPT are only present on
@@ -911,12 +931,15 @@
     // TPS for it and replies with the graph history.
     send({type:'watch', server:name});
 
-    const cached = consoleLines.get(name);
-    if (cached && cached.length){
-      renderConsoleFull(cached);
-    } else {
-      el('console').innerHTML = '<div class="placeholder">No output yet.</div>';
-      send({type:'get_logs', server:name});
+    applyPermissions();
+    if (perms.console){
+      const cached = consoleLines.get(name);
+      if (cached && cached.length){
+        renderConsoleFull(cached);
+      } else {
+        el('console').innerHTML = '<div class="placeholder">No output yet.</div>';
+        send({type:'get_logs', server:name});
+      }
     }
 
     const cmdInput = el('cmdInput');
@@ -1437,7 +1460,7 @@
     const badges = [f.op && 'Operator', f.whitelisted && 'Whitelisted', f.banned && 'Banned'].filter(Boolean);
     if (badges.length) rows.push(row('Status', badges.join(', ')));
 
-    el('pmVitals').innerHTML = vitalsHtml(d, running && openPlayer.online);
+    el('pmVitals').innerHTML = vitalsHtml(d, running && openPlayer.online && perms.console);
     el('pmBody').innerHTML = rows.join('');
 
     const n = openPlayer.name;
@@ -1533,6 +1556,7 @@
     consoleLines.clear();
     history.clear();
     currentServer = null;
+    perms = { admin: false, console: false };
     showView('login');
   });
 
