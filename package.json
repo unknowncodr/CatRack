@@ -6,8 +6,8 @@
   "scripts": {
     "start": "dist\\catrack-desktop.exe",
     "dev": "nwbuild --mode run --glob false \"%INIT_CWD%\"",
-    "build": "nwbuild --mode build --platform win --outDir dist \"*.html *.json *.png\"",
-    "package": "nwbuild --mode package --platform win --outDir dist \"*.html *.json *.png\""
+    "build": "nwbuild --mode build --platform win --outDir dist \"*.html *.json *.png fonts/*\"",
+    "package": "nwbuild --mode package --platform win --outDir dist \"*.html *.json *.png fonts/*\""
   },
   "author": "Nomyi",
   "devDependencies": {

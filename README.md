@@ -13,6 +13,8 @@ WebSocket and does not run a backend of its own.
 - Review recent console output and send console commands.
 - Inspect online and previously known players, their available saved data and
   statistics, and manage player permissions.
+- Browse a player's inventory and ender chest with vanilla-style tooltips, the
+  enchantment glint, and openable shulker boxes, bundles and other containers.
 - Change a server's RAM override and port for its next start.
 - View recent CPU, memory, and TPS history in the server detail view.
 
@@ -85,7 +87,7 @@ and is not the recommended way to preview the dashboard.
 
 ## Deploy
 
-Publish `index.html`, `caticon.png`, and `CNAME` from the repository root using
+Publish `index.html`, `caticon.png`, `fonts/`, and `CNAME` from the repository root using
 a static hosting provider. For GitHub Pages, configure the repository to publish
 from the root of the selected branch; `CNAME` contains the custom domain
 `catrack.chunkkeeper.com`. Configure that domain's DNS and HTTPS in the hosting
@@ -101,6 +103,13 @@ then you can always use mine which should always be up to date.
 
 It is accessible on <https://catrack.chunkkeeper.com> and is entirely peer to peer. 
 It stores nothing and we wont have any control over your servers!
+
+## Credits
+
+The inventory UI's pixel font is [Minecraft Font](https://github.com/IdreesInc/Minecraft-Font)
+by Idrees Hassan, an independently drawn lookalike under the SIL Open Font
+License 1.1 (see [`fonts/OFL.txt`](fonts/OFL.txt)). It contains nothing from the
+game's files. This project is not affiliated with Mojang or Microsoft.
 
 ## Security
 

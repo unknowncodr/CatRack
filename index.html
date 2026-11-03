@@ -8,6 +8,17 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
+  /* Pixel font for the inventory UI only, applied through .mc-font. Self-hosted,
+     SIL OFL 1.1: see fonts/OFL.txt. */
+  @font-face{
+    font-family:'Minecraft'; font-weight:400; font-style:normal; font-display:swap;
+    src:url('fonts/Minecraft.otf') format('opentype');
+  }
+  @font-face{
+    font-family:'Minecraft'; font-weight:700; font-style:normal; font-display:swap;
+    src:url('fonts/Minecraft-Bold.otf') format('opentype');
+  }
+
   :root{
     --bg: #0F1115;
     --surface: #181B22;
@@ -294,6 +305,8 @@
   .modal-back{
     position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10;
     display:flex; align-items:center; justify-content:center; padding:24px;
+    --u:2px; /* One Minecraft pixel. applyMcUnit() replaces it with a size that
+                is a whole number of device pixels and fits the modal. */
   }
   .modal{
     background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
@@ -304,8 +317,12 @@
     font-weight:700; font-size:16px; margin-bottom:14px;
   }
   .pm-layout{display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;}
-  .pm-left{--u:2px; flex:0 0 auto; padding:var(--u);}
+  .pm-left{flex:0 0 auto; padding:var(--u);}
   .pm-right{flex:1 1 260px; min-width:240px;}
+  @media (max-width:480px){
+    .modal-back{padding:8px;}
+    .modal{padding:12px;}
+  }
   .pm-row{
     display:flex; justify-content:space-between; gap:12px; padding:6px 0;
     border-bottom:1px solid var(--border); font-size:13px;
@@ -334,8 +351,22 @@
   }
 
   /* --- Vanilla-style inventory ---
-     Everything is sized from --u (one Minecraft pixel). Set --u on
-     .pm-left above to 3px or 4px for a bigger inventory. */
+     Everything is sized from --u (one Minecraft pixel). Change MC_SCALE in
+     the script for a bigger inventory. */
+  .mc-font{
+    font-family:'Minecraft','IBM Plex Mono',monospace;
+    font-weight:400;
+    /* The font's em is 9 of its pixels, and its advances run half a pixel wider
+       than the game's (spaces half a pixel narrower). */
+    font-size:calc(9*var(--u));
+    letter-spacing:calc(-.5*var(--u));
+    word-spacing:calc(.5*var(--u));
+    font-kerning:none;
+    font-variant-ligatures:none;
+    font-synthesis:style;
+    -webkit-font-smoothing:none;
+    font-smooth:never;
+  }
   .mc-panel{
     position:relative;
     width:calc(176*var(--u)); height:calc(166*var(--u));
@@ -356,10 +387,45 @@
     content:""; position:absolute; inset:0;
     background:rgba(255,255,255,0.5); pointer-events:none;
   }
+  /* Openable items: pointer cursor and a small corner marker. */
+  .mc-slot.openable{cursor:pointer;}
+  .mc-slot.openable::before{
+    content:""; position:absolute; z-index:1; top:0; right:0;
+    width:calc(4*var(--u)); height:calc(4*var(--u));
+    background:#FFD83D;
+    clip-path:polygon(0 0, 100% 0, 100% 100%);
+    pointer-events:none;
+  }
+  .mc-slot.openable:focus-visible{outline:2px solid var(--accent); outline-offset:0; z-index:2;}
   .mc-item{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;}
   .mc-item img{
     width:calc(16*var(--u)); height:calc(16*var(--u));
     image-rendering:pixelated; display:block;
+  }
+  /* Enchantment glint. The icon is set as the mask inline, so transparent
+     pixels stay clear; items with no icon get the shimmer over their tile. */
+  .mc-glint{
+    position:absolute; inset:0; pointer-events:none;
+    image-rendering:pixelated;
+    mix-blend-mode:screen;
+    background-image:
+      linear-gradient(120deg, transparent 32%, rgba(150,70,255,.75) 43%, rgba(225,180,255,.95) 50%, rgba(150,70,255,.75) 57%, transparent 68%),
+      linear-gradient(rgba(125,60,255,.28), rgba(125,60,255,.28));
+    background-size:300% 300%, 100% 100%;
+    background-repeat:no-repeat;
+    background-position:100% 100%, 0 0;
+    -webkit-mask-size:100% 100%; mask-size:100% 100%;
+    -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+    animation:mc-glint 3.2s linear infinite;
+  }
+  @keyframes mc-glint{
+    from{background-position:100% 100%, 0 0;}
+    to{background-position:0% 0%, 0 0;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    /* Named here because the global rule above only shortens durations, which
+       would make an infinite animation flicker. Stays as a static tint. */
+    .mc-glint{animation:none !important; background-position:50% 50%, 0 0;}
   }
   .mc-noicon{
     font-family:'IBM Plex Mono',monospace; font-weight:600;
@@ -368,8 +434,7 @@
   .mc-count{
     position:absolute; right:0; bottom:0;
     padding:0 var(--u);
-    font-family:'IBM Plex Mono',monospace; font-weight:700;
-    font-size:calc(6*var(--u)); line-height:1.1; color:#fff;
+    line-height:1; color:#fff;
     text-shadow:var(--u) var(--u) 0 #3f3f3f;
     pointer-events:none;
   }
@@ -391,6 +456,107 @@
     background:#8b8b8b;
     clip-path:polygon(0 35%, 60% 35%, 60% 0, 100% 50%, 60% 100%, 60% 65%, 0 65%);
   }
+
+  /* --- Item tooltip (appended to body so the modal can't clip it) --- */
+  .mc-tooltip{
+    position:fixed; left:0; top:0; z-index:100;
+    width:max-content; max-width:100vw; overflow:hidden;
+    padding:calc(4*var(--u));
+    background:rgba(16,0,16,.94);
+    /* Notched corners: one Minecraft pixel cut from each. */
+    clip-path:polygon(
+      var(--u) 0, calc(100% - var(--u)) 0,
+      calc(100% - var(--u)) var(--u), 100% var(--u),
+      100% calc(100% - var(--u)), calc(100% - var(--u)) calc(100% - var(--u)),
+      calc(100% - var(--u)) 100%, var(--u) 100%,
+      var(--u) calc(100% - var(--u)), 0 calc(100% - var(--u)),
+      0 var(--u), var(--u) var(--u));
+    pointer-events:none;
+  }
+  .mc-tooltip::before{
+    content:""; position:absolute; inset:var(--u);
+    border:var(--u) solid transparent;
+    border-image:linear-gradient(rgba(80,0,255,.31), rgba(40,0,127,.31)) 1;
+    pointer-events:none;
+  }
+  .mc-line{
+    display:block; white-space:pre;
+    line-height:calc(10*var(--u));
+    min-height:calc(10*var(--u));
+  }
+  /* The first line's extra gap; the last line's spare 2px isn't drawn. */
+  .mc-line:first-child:not(:last-child){margin-bottom:calc(2*var(--u));}
+  .mc-line:last-child{margin-bottom:calc(-2*var(--u));}
+  .mc-seg-italic{font-style:italic;}
+
+  .mc-preview{
+    display:grid; grid-template-columns:repeat(4, calc(18*var(--u)));
+    width:calc(72*var(--u)); margin-top:calc(4*var(--u));
+  }
+  .mc-preview-cell{
+    position:relative; height:calc(18*var(--u));
+    border:var(--u) solid transparent;
+    background:rgba(139,139,139,.22); background-clip:padding-box;
+  }
+  .mc-preview-more{
+    display:flex; align-items:center; justify-content:center;
+    color:#fff;
+    text-shadow:var(--u) var(--u) 0 #3f3f3f;
+  }
+
+  /* --- Fullness bar: bundle panels and bundle tooltips --- */
+  .mc-bar{
+    position:relative; height:calc(12*var(--u));
+    background:#1b1b1b;
+    border:var(--u) solid; border-color:#373737 #fff #fff #373737;
+  }
+  .mc-preview + .mc-bar{width:calc(72*var(--u)); margin-top:calc(2*var(--u));}
+  .mc-bar-fill{position:absolute; left:0; top:0; bottom:0; background:#6F5BFF;}
+  .mc-bar.full .mc-bar-fill{background:#D94040;}
+  .mc-bar-label{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    line-height:1; color:#fff;
+    text-shadow:var(--u) var(--u) 0 #3f3f3f;
+  }
+
+  /* --- Container and bundle panels, drawn over the player modal --- */
+  .mc-panels{
+    position:fixed; inset:0; z-index:11;
+    display:flex; align-items:center; justify-content:center;
+    padding:8px;
+    background:rgba(0,0,0,.45);
+  }
+  .mc-window{
+    width:calc(176*var(--u)); max-height:100%; overflow-y:auto;
+    background:#c6c6c6;
+    box-shadow:
+      inset calc(2*var(--u)) calc(2*var(--u)) 0 #fff,
+      inset calc(-2*var(--u)) calc(-2*var(--u)) 0 #555;
+    outline:var(--u) solid #000; outline-offset:0;
+    padding:calc(4*var(--u)) 0 calc(5*var(--u));
+  }
+  .mc-window-head{
+    display:flex; align-items:center; gap:calc(3*var(--u));
+    margin:0 calc(4*var(--u)) calc(3*var(--u));
+    padding:var(--u) calc(2*var(--u));
+    background:rgba(16,0,16,.94);
+  }
+  .mc-window-title{flex:1 1 auto; min-width:0; overflow:hidden;}
+  .mc-window-title .mc-line{margin:0;}
+  .mc-back{
+    flex:none; padding:0 calc(3*var(--u));
+    font:inherit; letter-spacing:inherit; line-height:calc(10*var(--u));
+    color:#fff; text-shadow:var(--u) var(--u) 0 #3f3f3f;
+    background:#6f6f6f;
+    border:var(--u) solid; border-color:#aaa #333 #333 #aaa; border-radius:0;
+  }
+  .mc-back:hover{background:#7f7fb0;}
+  .mc-grid{position:relative; margin-top:var(--u);}
+  .mc-loot{
+    padding:calc(18*var(--u)) 0; text-align:center;
+    line-height:calc(10*var(--u)); color:#404040;
+  }
+  .mc-window > .mc-bar{margin:calc(4*var(--u)) calc(8*var(--u)) 0;}
 
   .console{
     background:#0B0D11;
@@ -592,6 +758,7 @@
         </div>
       </div>
     </div>
+    <div class="mc-panels" id="pmPanels" hidden></div>
   </div>
 
   <footer>Host connection is peer-to-peer through your tunnel — nothing passes through our cat.</footer>
@@ -619,6 +786,7 @@
   let invView = 'inv';          // 'inv' | 'ender'
   let lastPlayerData = null;    // last player_detail payload for the open modal
   let skinViewer = null;        // skinview3d instance for the open modal
+  let panelStack = [];          // items whose container panels are open, innermost last
   let iconDb = null;            // item id -> {readable, texture}
   let iconDbPromise = null;
   // What this connection's token may do, per server: `servers` maps a server
@@ -1190,11 +1358,6 @@
     return d.innerHTML;
   }
 
-  // For values placed inside "double quoted" HTML attributes.
-  function escapeAttr(str){
-    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  }
-
   function send(obj){
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
@@ -1238,6 +1401,11 @@
 
   function loadIconDb(){
     if (iconDbPromise) return iconDbPromise;
+    // Fetch the pixel fonts up front so the first tooltip is measured correctly.
+    if (document.fonts){
+      document.fonts.load("16px 'Minecraft'").catch(() => {});
+      document.fonts.load("bold 16px 'Minecraft'").catch(() => {});
+    }
     iconDbPromise = (async () => {
       for (const v of ICON_VERSIONS){
         try{
@@ -1258,14 +1426,50 @@
     return String(id).replace(/^minecraft:/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  function itemHtml(it){
+  function mk(tag, cls, text){
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // An older backend sends no tooltip: null here, as opposed to [] for an item
+  // that should really show none.
+  const tooltipOf = (it) => (Array.isArray(it.tooltip) ? it.tooltip : null);
+
+  // First tooltip line as plain text. Obfuscated text stays hidden, as in game.
+  function itemLabel(it){
+    const first = (tooltipOf(it) || [])[0];
+    const text = (Array.isArray(first) ? first : [])
+      .filter((seg) => !seg.obfuscated).map((seg) => seg.text).join('').trim();
+    return text || prettyId(it.id);
+  }
+
+  // Icon, glint and count: everything drawn for an item, wherever it is shown.
+  function itemEl(it){
+    const box = mk('div', 'mc-item');
     const meta = iconDb && iconDb[it.id];
-    const name = meta && meta.readable ? meta.readable : prettyId(it.id);
-    const img = meta && meta.texture
-      ? `<img src="${escapeAttr(meta.texture)}" alt="">`
-      : `<span class="mc-noicon">${escapeHtml(prettyId(it.id).slice(0, 2))}</span>`;
-    const count = it.count > 1 ? `<span class="mc-count">${it.count}</span>` : '';
-    return `<div class="mc-item" title="${escapeAttr(name + ' (' + it.id + ')')}">${img}${count}</div>`;
+    const texture = meta && meta.texture;
+    if (texture){
+      const img = mk('img');
+      img.alt = '';
+      img.src = texture;
+      box.appendChild(img);
+    } else {
+      box.appendChild(mk('span', 'mc-noicon', prettyId(it.id).slice(0, 2)));
+    }
+    if (it.glint){
+      const glint = mk('div', 'mc-glint');
+      if (texture){
+        const mask = `url("${String(texture).replace(/["\\\n]/g, encodeURIComponent)}")`;
+        glint.style.webkitMaskImage = mask;
+        glint.style.maskImage = mask;
+      }
+      box.appendChild(glint);
+    }
+    if (it.count > 1) box.appendChild(mk('span', 'mc-count mc-font', it.count));
+    if (!tooltipOf(it)) box.title = `${(meta && meta.readable) || prettyId(it.id)} (${it.id})`;
+    return box;
   }
 
   // ---- Vanilla-style inventory ----
@@ -1273,8 +1477,32 @@
   // numbers the game uses for slot positions); --u is one MC pixel.
   const at = (x, y) => `left:calc(var(--u)*${x - 1});top:calc(var(--u)*${y - 1})`;
 
-  function slotHtml(x, y, item){
-    return `<div class="mc-slot" style="${at(x, y)}">${item ? itemHtml(item) : ''}</div>`;
+  function placed(cls, x, y, text){
+    const n = mk('div', cls, text);
+    n.style.cssText = at(x, y);
+    return n;
+  }
+
+  const slotItems = new WeakMap(); // .mc-slot element -> the item in it
+
+  // The one slot component: inventory, ender chest and container panels.
+  function slotEl(x, y, item){
+    const slot = placed('mc-slot', x, y);
+    if (!item) return slot;
+    slotItems.set(slot, item);
+    const box = itemEl(item);
+    if (item.contents){
+      slot.classList.add('openable');
+      slot.tabIndex = 0;
+      slot.setAttribute('role', 'button');
+      slot.setAttribute('aria-haspopup', 'dialog');
+      slot.setAttribute('aria-label', `Open ${itemLabel(item)}`);
+    } else if (tooltipOf(item)){
+      box.setAttribute('role', 'img');
+      box.setAttribute('aria-label', itemLabel(item));
+    }
+    slot.appendChild(box);
+    return slot;
   }
 
   function bySlot(items){
@@ -1283,44 +1511,400 @@
     return m;
   }
 
-  function inventoryHtml(d){
+  function inventoryEl(d){
     const m = bySlot(d.inventory);
-    let h = '';
+    const panel = mk('div', 'mc-panel');
 
     // Armor: helmet, chestplate, leggings, boots (top to bottom)
-    [103, 102, 101, 100].forEach((s, i) => { h += slotHtml(8, 8 + i * 18, m.get(s)); });
+    [103, 102, 101, 100].forEach((s, i) => panel.appendChild(slotEl(8, 8 + i * 18, m.get(s))));
 
     // Player model box + offhand
-    h += `<div class="mc-player" style="${at(26, 8)}"><canvas id="pmSkin"></canvas></div>`;
-    h += slotHtml(77, 62, m.get(-106) || m.get(150));
+    const model = placed('mc-player', 26, 8);
+    const canvas = mk('canvas');
+    canvas.id = 'pmSkin';
+    model.appendChild(canvas);
+    panel.appendChild(model);
+    panel.appendChild(slotEl(77, 62, m.get(-106) || m.get(150)));
 
     // Crafting grid (empty: the game doesn't save its contents)
-    h += `<div class="mc-label" style="${at(98, 6)}">Crafting</div>`;
-    h += slotHtml(98, 18) + slotHtml(116, 18) + slotHtml(98, 36) + slotHtml(116, 36);
-    h += `<div class="mc-arrow" style="${at(134, 29)}"></div>`;
-    h += slotHtml(154, 28);
+    panel.appendChild(placed('mc-label', 98, 6, 'Crafting'));
+    [[98, 18], [116, 18], [98, 36], [116, 36]].forEach(([x, y]) => panel.appendChild(slotEl(x, y)));
+    panel.appendChild(placed('mc-arrow', 134, 29));
+    panel.appendChild(slotEl(154, 28));
 
     // Main inventory (slots 9-35) and hotbar (0-8)
     for (let r = 0; r < 3; r++){
       for (let c = 0; c < 9; c++){
-        h += slotHtml(8 + c * 18, 84 + r * 18, m.get(9 + r * 9 + c));
+        panel.appendChild(slotEl(8 + c * 18, 84 + r * 18, m.get(9 + r * 9 + c)));
       }
     }
-    for (let c = 0; c < 9; c++) h += slotHtml(8 + c * 18, 142, m.get(c));
+    for (let c = 0; c < 9; c++) panel.appendChild(slotEl(8 + c * 18, 142, m.get(c)));
 
-    return `<div class="mc-panel">${h}</div>`;
+    return panel;
   }
 
-  function enderHtml(d){
+  function enderEl(d){
     const m = bySlot(d.enderchest);
-    let h = `<div class="mc-label" style="${at(8, 6)}">Ender Chest</div>`;
+    const panel = mk('div', 'mc-panel ender');
+    panel.appendChild(placed('mc-label', 8, 6, 'Ender Chest'));
     for (let r = 0; r < 3; r++){
       for (let c = 0; c < 9; c++){
-        h += slotHtml(8 + c * 18, 18 + r * 18, m.get(r * 9 + c));
+        panel.appendChild(slotEl(8 + c * 18, 18 + r * 18, m.get(r * 9 + c)));
       }
     }
-    return `<div class="mc-panel ender">${h}</div>`;
+    return panel;
   }
+
+  // ---- Pixel scale ----
+  const MC_SCALE = 2; // Preferred CSS pixels per Minecraft pixel
+
+  // A Minecraft pixel must be a whole number of device pixels for the font and
+  // icons to stay sharp, including at 125% display scaling and on phones.
+  function fitMcUnit(availableCss, gamePixels){
+    const dpr = window.devicePixelRatio || 1;
+    const fit = Math.floor(availableCss * dpr / gamePixels);
+    return Math.max(1, Math.min(Math.round(MC_SCALE * dpr), fit)) / dpr;
+  }
+
+  function applyMcUnit(){
+    const back = el('playerModal');
+    if (back.hidden) return;
+    const modal = back.querySelector('.modal');
+    const style = getComputedStyle(modal);
+    const available = modal.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    // 176 wide, plus the outline and .pm-left's padding on both sides.
+    back.style.setProperty('--u', fitMcUnit(available, 180) + 'px');
+    // The 3D viewer sets its canvas size in pixels, so it has to follow along.
+    const canvas = el('pmSkin');
+    if (skinViewer && canvas){
+      skinViewer.width = canvas.parentElement.clientWidth;
+      skinViewer.height = canvas.parentElement.clientHeight;
+    }
+  }
+
+  // ---- Tooltip text ----
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+  // Obfuscated text swaps each character for a random one of the same width, as
+  // the game does, so the line's width doesn't jitter.
+  const OBF_CHARS = Array.from({length: 94}, (_, i) => String.fromCharCode(33 + i));
+  const obfPools = new Map(); // canvas font -> Map(width -> characters)
+  const obfSpans = new Map(); // span -> {text, font}
+  let obfTimer = null;
+  let obfCanvas = null;
+
+  function obfPool(font){
+    if (obfPools.has(font)) return obfPools.get(font);
+    obfCanvas = obfCanvas || document.createElement('canvas').getContext('2d');
+    obfCanvas.font = font;
+    const pool = new Map();
+    for (const ch of OBF_CHARS){
+      const w = obfCanvas.measureText(ch).width;
+      if (!pool.has(w)) pool.set(w, []);
+      pool.get(w).push(ch);
+    }
+    // Widths measured before the font has loaded would be wrong for good.
+    if (!document.fonts || document.fonts.check(font)) obfPools.set(font, pool);
+    return pool;
+  }
+
+  function scramble(text, font){
+    const pool = obfPool(font);
+    obfCanvas.font = font;
+    let out = '';
+    for (const ch of text){
+      if (/\s/.test(ch)){ out += ch; continue; }
+      const group = pool.get(obfCanvas.measureText(ch).width) || OBF_CHARS;
+      out += group[Math.floor(Math.random() * group.length)];
+    }
+    return out;
+  }
+
+  function tickObfuscated(){
+    for (const [span, o] of obfSpans){
+      if (!span.isConnected) obfSpans.delete(span);
+      else if (!reducedMotion.matches) span.textContent = scramble(o.text, o.font);
+    }
+    if (!obfSpans.size){
+      clearInterval(obfTimer);
+      obfTimer = null;
+    }
+  }
+
+  // The game's shadow: the text colour at 25% brightness.
+  function shadowColor(hex){
+    const v = parseInt(hex.slice(1), 16);
+    return `rgb(${(v >> 16 & 255) >> 2},${(v >> 8 & 255) >> 2},${(v & 255) >> 2})`;
+  }
+
+  // The one text renderer: tooltips and panel titles. Text only ever goes in
+  // through textContent, because names and lore are player-controlled.
+  function lineEl(segments){
+    const line = mk('span', 'mc-line');
+    for (const seg of Array.isArray(segments) ? segments : []){
+      const span = mk('span');
+      const color = /^#[0-9a-f]{6}$/i.test(seg.color) ? seg.color : '#FFFFFF';
+      span.style.color = color;
+      span.style.textShadow = `var(--u) var(--u) 0 ${shadowColor(color)}`;
+      if (seg.bold) span.style.fontWeight = '700';
+      if (seg.italic) span.classList.add('mc-seg-italic');
+      const deco = [seg.underlined && 'underline', seg.strikethrough && 'line-through'].filter(Boolean);
+      if (deco.length) span.style.textDecoration = deco.join(' ');
+      const text = String(seg.text == null ? '' : seg.text);
+      if (seg.obfuscated){
+        const font = `${seg.bold ? 'bold ' : ''}16px 'Minecraft'`;
+        span.textContent = scramble(text, font);
+        obfSpans.set(span, {text, font});
+        if (!obfTimer) obfTimer = setInterval(tickObfuscated, 50);
+      } else {
+        span.textContent = text;
+      }
+      line.appendChild(span);
+    }
+    return line;
+  }
+
+  function bundleBarEl(contents){
+    const weight = Number(contents.weight) || 0;
+    const capacity = Number(contents.capacity) || 0;
+    const full = capacity > 0 && weight >= capacity;
+    const bar = mk('div', 'mc-bar mc-font' + (full ? ' full' : ''));
+    const fill = mk('div', 'mc-bar-fill');
+    fill.style.width = capacity > 0 ? `${Math.min(100, weight / capacity * 100)}%` : '0';
+    bar.appendChild(fill);
+    bar.appendChild(mk('div', 'mc-bar-label', weight <= 0 ? 'Empty' : full ? 'Full' : `${weight}/${capacity}`));
+    return bar;
+  }
+
+  // ---- Tooltip ----
+  const PREVIEW_SLOTS = 12; // 4 x 3, like the game's bundle tooltip
+  const tooltip = mk('div', 'mc-tooltip mc-font');
+  tooltip.hidden = true;
+  tooltip.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(tooltip);
+  let tooltipItem = null;
+  let pinnedSlot = null;  // slot whose tooltip a tap opened
+  let lastPointerType = 'mouse';
+
+  function bundlePreviewEl(items){
+    const grid = mk('div', 'mc-preview');
+    const shown = items.length > PREVIEW_SLOTS ? PREVIEW_SLOTS - 1 : items.length;
+    for (const it of items.slice(0, shown)){
+      const cell = mk('div', 'mc-preview-cell');
+      cell.appendChild(itemEl(it));
+      grid.appendChild(cell);
+    }
+    if (items.length > shown) grid.appendChild(mk('div', 'mc-preview-cell mc-preview-more', `+${items.length - shown}`));
+    return grid;
+  }
+
+  function hideTooltip(){
+    tooltip.hidden = true;
+    tooltip.replaceChildren();
+    tooltipItem = null;
+    pinnedSlot = null;
+  }
+
+  // Largest whole-device-pixel scale at which the tooltip fits. Lines never wrap,
+  // so a long one on a phone has to shrink instead.
+  function fitTooltip(){
+    const dpr = window.devicePixelRatio || 1;
+    const base = parseFloat(getComputedStyle(el('playerModal')).getPropertyValue('--u')) || MC_SCALE;
+    const vw = document.documentElement.clientWidth;
+    const vh = window.innerHeight;
+    for (let px = Math.round(base * dpr); px >= 1; px--){
+      tooltip.style.setProperty('--u', px / dpr + 'px');
+      if (tooltip.scrollWidth <= vw - 8 && tooltip.scrollHeight <= vh - 8) return;
+    }
+  }
+
+  function moveTooltip(x, y){
+    const dpr = window.devicePixelRatio || 1;
+    const u = parseFloat(tooltip.style.getPropertyValue('--u')) || MC_SCALE;
+    const w = tooltip.offsetWidth, h = tooltip.offsetHeight;
+    const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    const gap = 12 * u, edge = 4;
+    let left = x + gap;
+    if (left + w > vw - edge) left = x - gap - w;               // flip to the left
+    left = Math.max(edge, Math.min(left, vw - edge - w));       // then clamp
+    const top = Math.max(edge, Math.min(y - gap, vh - edge - h));
+    // On the device-pixel grid, or the pixel font blurs.
+    tooltip.style.left = Math.round(Math.max(0, left) * dpr) / dpr + 'px';
+    tooltip.style.top = Math.round(Math.max(0, top) * dpr) / dpr + 'px';
+  }
+
+  function showTooltip(item, x, y){
+    const lines = tooltipOf(item);
+    if (!lines || !lines.length){
+      hideTooltip();
+      return false;
+    }
+    if (tooltipItem !== item){
+      tooltip.replaceChildren(...lines.map(lineEl));
+      const c = item.contents;
+      if (c && c.kind === 'bundle' && c.items && c.items.length){
+        tooltip.appendChild(bundlePreviewEl(c.items));
+        tooltip.appendChild(bundleBarEl(c));
+      }
+      tooltip.hidden = false;
+      tooltipItem = item;
+      fitTooltip();
+    }
+    moveTooltip(x, y);
+    return true;
+  }
+
+  // ---- Container panels ----
+  const THREE_BY_THREE = new Set(['minecraft:dispenser', 'minecraft:dropper', 'minecraft:crafter']);
+
+  function containerBodyEl(item){
+    const c = item.contents;
+    if (c.lootTable) return mk('div', 'mc-loot', '???????');
+    const size = Math.max(0, Number(c.size) || 0);
+    const cols = THREE_BY_THREE.has(item.id) ? 3 : size >= 9 ? 9 : Math.max(size, 1);
+    const left = 8 + (9 - cols) * 9; // Centres grids narrower than the usual 9
+    const m = bySlot(c.items);
+    const cells = [];
+    for (let i = 0; i < size; i++) cells.push({x: left + (i % cols) * 18, y: 1 + Math.floor(i / cols) * 18, item: m.get(i)});
+    return gridEl(cells, Math.ceil(size / cols));
+  }
+
+  function bundleBodyEl(item){
+    const items = item.contents.items || [];
+    const cells = items.map((it, i) => ({x: 8 + (i % 9) * 18, y: 1 + Math.floor(i / 9) * 18, item: it}));
+    const body = document.createDocumentFragment();
+    if (items.length) body.appendChild(gridEl(cells, Math.ceil(items.length / 9)));
+    body.appendChild(bundleBarEl(item.contents));
+    return body;
+  }
+
+  function gridEl(cells, rows){
+    const grid = mk('div', 'mc-grid');
+    grid.style.height = `calc(var(--u)*${rows * 18})`;
+    for (const cell of cells) grid.appendChild(slotEl(cell.x, cell.y, cell.item));
+    return grid;
+  }
+
+  function panelEl(item){
+    const win = mk('div', 'mc-window mc-font');
+    win.setAttribute('role', 'dialog');
+    win.setAttribute('aria-modal', 'true');
+    win.setAttribute('aria-label', itemLabel(item));
+
+    const head = mk('div', 'mc-window-head');
+    const back = mk('button', 'mc-back', '<');
+    back.type = 'button';
+    back.setAttribute('aria-label', 'Back');
+    head.appendChild(back);
+    const title = mk('div', 'mc-window-title');
+    const lines = tooltipOf(item);
+    title.appendChild(lineEl(lines && lines.length ? lines[0] : [{text: prettyId(item.id), color: '#FFFFFF'}]));
+    head.appendChild(title);
+    win.appendChild(head);
+
+    win.appendChild(item.contents.kind === 'bundle' ? bundleBodyEl(item) : containerBodyEl(item));
+    return win;
+  }
+
+  function renderPanels(){
+    const host = el('pmPanels');
+    const top = panelStack[panelStack.length - 1];
+    hideTooltip();
+    host.hidden = !top;
+    // Keeps Tab inside the panel while one is open.
+    el('playerModal').querySelector('.modal').inert = !!top;
+    host.replaceChildren(...(top ? [panelEl(top)] : []));
+    if (top) host.querySelector('.mc-back').focus();
+  }
+
+  function openPanel(item){
+    panelStack.push(item);
+    renderPanels();
+  }
+
+  // Puts focus back on the slot a panel was opened from, if it's still there.
+  function focusSlotOf(item){
+    for (const slot of el('playerModal').querySelectorAll('.mc-slot.openable')){
+      if (slotItems.get(slot) === item) return slot.focus();
+    }
+  }
+
+  function backPanel(){
+    const closed = panelStack.pop();
+    renderPanels();
+    if (closed) focusSlotOf(closed);
+  }
+
+  function closePanels(){
+    const first = panelStack[0];
+    panelStack = [];
+    renderPanels();
+    if (first) focusSlotOf(first);
+  }
+
+  // Tooltips and opening are delegated, so inventory and panel slots behave alike.
+  function slotAt(target){
+    const slot = target && target.closest ? target.closest('.mc-slot') : null;
+    return slot && slotItems.has(slot) ? slot : null;
+  }
+
+  function onPointerHover(e){
+    if (e.pointerType === 'touch') return;
+    const slot = slotAt(e.target);
+    if (slot) showTooltip(slotItems.get(slot), e.clientX, e.clientY);
+    else if (tooltipItem) hideTooltip();
+  }
+
+  function onSlotClick(e){
+    if (e.target.closest('.mc-back')){ backPanel(); return; }
+    if (e.target.id === 'pmPanels'){ closePanels(); return; }
+    const slot = slotAt(e.target);
+    if (lastPointerType === 'touch'){
+      if (!slot){ hideTooltip(); return; }
+      // First tap shows the tooltip. A second one opens, or dismisses if it can't.
+      if (pinnedSlot !== slot && showTooltip(slotItems.get(slot), e.clientX, e.clientY)){
+        pinnedSlot = slot;
+        return;
+      }
+      if (!slotItems.get(slot).contents){ hideTooltip(); return; }
+    }
+    if (slot && slotItems.get(slot).contents) openPanel(slotItems.get(slot));
+  }
+
+  window.addEventListener('pointerdown', (e) => { lastPointerType = e.pointerType; }, true);
+  {
+    const back = el('playerModal');
+    back.addEventListener('pointerover', onPointerHover);
+    back.addEventListener('pointermove', onPointerHover);
+    back.addEventListener('pointerout', (e) => {
+      if (e.pointerType !== 'touch' && !slotAt(e.relatedTarget)) hideTooltip();
+    });
+    back.addEventListener('click', onSlotClick);
+    back.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.mc-slot.openable')){
+        e.preventDefault();
+        openPanel(slotItems.get(e.target));
+      }
+    });
+    back.addEventListener('focusin', (e) => {
+      const slot = slotAt(e.target);
+      if (!slot || !slot.matches(':focus-visible')) return;
+      const r = slot.getBoundingClientRect();
+      showTooltip(slotItems.get(slot), r.right, r.top);
+    });
+    back.addEventListener('focusout', (e) => { if (slotAt(e.target)) hideTooltip(); });
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || el('playerModal').hidden) return;
+    if (panelStack.length) closePanels();
+    else hideTooltip();
+  });
+  // Touch-pinned tooltips don't follow a scroll; a hovering mouse brings its back.
+  document.addEventListener('scroll', hideTooltip, true);
+  window.addEventListener('resize', () => {
+    hideTooltip();
+    applyMcUnit();
+  });
 
   // ---- 3D player model ----
   function disposeSkin(){
@@ -1394,6 +1978,7 @@
     const d = lastPlayerData;
     const pane = el('pmInv');
     if (!d) return;
+    hideTooltip();
 
     if (!d.hasData){
       disposeSkin();
@@ -1406,11 +1991,11 @@
       if (lastPlayerData !== d || !openPlayer) return; // a newer render took over
     }
     if (invView === 'inv'){
-      pane.innerHTML = inventoryHtml(d);
+      pane.replaceChildren(inventoryEl(d));
       mountSkin(d.uuid);
     } else {
       disposeSkin();
-      pane.innerHTML = enderHtml(d);
+      pane.replaceChildren(enderEl(d));
     }
   }
 
@@ -1494,6 +2079,8 @@
     openPlayer = null;
     lastPlayerData = null;
     disposeSkin();
+    panelStack = [];
+    renderPanels();
     el('playerModal').hidden = true;
   }
 
@@ -1517,6 +2104,8 @@
     };
     lastPlayerData = null;
     invView = 'inv';
+    panelStack = [];
+    renderPanels();
     disposeSkin();
     el('pmName').textContent = openPlayer.name;
     el('pmVitals').innerHTML = '';
@@ -1526,6 +2115,7 @@
     el('pmTabInv').classList.add('active');
     el('pmTabEnder').classList.remove('active');
     el('playerModal').hidden = false;
+    applyMcUnit();
     send({type:'get_player', server: currentServer, uuid: openPlayer.uuid});
   });
 
