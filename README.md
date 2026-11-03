@@ -48,6 +48,11 @@ Connection details are stored in the current tab's `sessionStorage` so the
 dashboard can reconnect after a refresh; they are cleared when the tab's
 session ends or when you disconnect.
 
+The token decides what you see: each token only lists the servers it was given,
+and controls it lacks on a server (start/stop, settings, console) are hidden.
+Permissions are set per server in the Host Agent's `.env`; see its
+[README](https://github.com/unknowncodr/catrack-backend#access-tokens-and-permissions).
+
 ### Server controls
 
 - **Start / Stop / Restart** control the selected server.
@@ -90,6 +95,12 @@ The deployed dashboard still needs network access to the Host Agent. For a
 publicly hosted HTTPS dashboard, expose the agent through a trusted HTTPS
 tunnel or reverse proxy that supports WebSockets and use its HTTPS base URL in
 the dashboard.
+
+If you dont want to publicly host the HTTPS dashboard yourself,
+then you can always use mine which should always be up to date. 
+
+It is accessible on <https://catrack.chunkkeeper.com> and is entirely peer to peer. 
+It stores nothing and we wont have any control over your servers!
 
 ## Security
 

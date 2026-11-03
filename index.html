@@ -490,7 +490,7 @@
         </div>
       </div>
       <div id="grid" class="grid"></div>
-      <div id="emptyState" class="empty" hidden>No server folders found. Make sure each server folder contains a server.jar.</div>
+      <div id="emptyState" class="empty" hidden>No servers to show. Every folder next to the host agent is listed as a server, and your token may only have access to some of them.</div>
     </section>
 
     <!-- SERVER DETAIL VIEW -->
@@ -621,7 +621,10 @@
   let skinViewer = null;        // skinview3d instance for the open modal
   let iconDb = null;            // item id -> {readable, texture}
   let iconDbPromise = null;
-  let perms = { admin: false, console: false }; // what this connection's token may do
+  // What this connection's token may do, per server: `servers` maps a server
+  // name to {console, admin, files, logs}; `default` applies to servers
+  // without their own entry (or null). Always read it through permsFor().
+  let perms = { default: null, servers: {} };
 
   const HISTORY_WINDOW_MS = 15 * 60 * 1000;
   const MAX_HISTORY = 225;
@@ -722,7 +725,7 @@
       case 'permissions':
         // Sent by the agent right after connecting; says what this token
         // may do. The agent enforces it too — this just hides the controls.
-        perms = msg;
+        perms = { default: msg.default || null, servers: msg.servers || {} };
         applyPermissions();
         break;
 
@@ -796,16 +799,27 @@
     }
   }
 
-  // Hides the controls this token can't use. Admin = start/stop/restart
-  // and RAM/port settings. Console = console output, command box and
-  // player actions (kick/ban/op/... are sent as console commands).
+  // The permissions this token has on one server. Everything is false for
+  // a server it has no entry for (those never show up in the list anyway).
+  // `files` and `logs` are reserved for the upcoming file explorer and
+  // logs tabs; nothing in the UI uses them yet.
+  function permsFor(name){
+    const none = { console: false, admin: false, files: false, logs: false };
+    return Object.assign(none, perms.servers[name] || perms.default || {});
+  }
+
+  // Hides the controls this token can't use on the open server. Admin =
+  // start/stop/restart and RAM/port settings. Console = console output,
+  // command box and player actions (kick/ban/op/... are sent as console
+  // commands).
   function applyPermissions(){
-    document.querySelector('.settings-panel').hidden = !perms.admin;
-    el('restartBtn').hidden = !perms.admin;
-    el('powerBtn').hidden = !perms.admin;
-    el('console').hidden = !perms.console;
-    document.querySelector('.cmd-row').hidden = !perms.console;
-    el('pmActions').hidden = !perms.console;
+    const p = permsFor(currentServer);
+    document.querySelector('.settings-panel').hidden = !p.admin;
+    el('restartBtn').hidden = !p.admin;
+    el('powerBtn').hidden = !p.admin;
+    el('console').hidden = !p.console;
+    document.querySelector('.cmd-row').hidden = !p.console;
+    el('pmActions').hidden = !p.console;
   }
 
   // Adds one point to the graph history. TPS/MSPT are only present on
@@ -932,7 +946,7 @@
     send({type:'watch', server:name});
 
     applyPermissions();
-    if (perms.console){
+    if (permsFor(name).console){
       const cached = consoleLines.get(name);
       if (cached && cached.length){
         renderConsoleFull(cached);
@@ -1460,7 +1474,7 @@
     const badges = [f.op && 'Operator', f.whitelisted && 'Whitelisted', f.banned && 'Banned'].filter(Boolean);
     if (badges.length) rows.push(row('Status', badges.join(', ')));
 
-    el('pmVitals').innerHTML = vitalsHtml(d, running && openPlayer.online && perms.console);
+    el('pmVitals').innerHTML = vitalsHtml(d, running && openPlayer.online && permsFor(currentServer).console);
     el('pmBody').innerHTML = rows.join('');
 
     const n = openPlayer.name;
@@ -1556,7 +1570,7 @@
     consoleLines.clear();
     history.clear();
     currentServer = null;
-    perms = { admin: false, console: false };
+    perms = { default: null, servers: {} };
     showView('login');
   });
 
