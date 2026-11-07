@@ -11,7 +11,7 @@
   },
   "author": "Nomyi",
   "devDependencies": {
-    "nw-builder": "^4.24.0"
+    "nw-builder": "^4.2.1"
   },
   "window": {
     "title": "Cat Rack",
@@ -25,5 +25,8 @@
     "app": {
       "icon": "caticon.ico"
     }
+  },
+  "dependencies": {
+    "build": "^0.1.4"
   }
 }
